@@ -1,0 +1,27 @@
+name: Scan Reddit pour candidats photos
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # toutes les 6h — ajuste selon le volume souhaité
+  workflow_dispatch: {}      # permet de lancer manuellement depuis l'onglet Actions
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Installer les dépendances (exifr pour l'enrichissement EXIF/IPTC/XMP)
+        run: npm install --no-audit --no-fund
+
+      - name: Lancer le scanner
+        run: node reddit-scanner.mjs
+        env:
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

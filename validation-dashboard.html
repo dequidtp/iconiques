@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Iconiques — Salle de tri</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg: #16130f;
+    --bg-raised: #1f1b15;
+    --bg-card: #221e17;
+    --hairline: #35301f;
+    --ink: #ede6d9;
+    --ink-dim: #9c9284;
+    --amber: #e8a33d;
+    --amber-dim: #8a6529;
+    --red: #a8433a;
+    --green: #5c8b74;
+    --font-display: 'Source Serif 4', Georgia, serif;
+    --font-mono: 'Space Mono', ui-monospace, monospace;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--font-mono);
+    -webkit-font-smoothing:antialiased;
+  }
+  header{
+    padding:28px 32px 0 32px;
+  }
+  .masthead{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    border-bottom:1px solid var(--hairline);
+    padding-bottom:16px;
+    flex-wrap:wrap;
+    gap:12px;
+  }
+  .masthead h1{
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:26px;
+    margin:0;
+    letter-spacing:0.5px;
+  }
+  .masthead .kicker{
+    font-size:11px;
+    color:var(--amber);
+    letter-spacing:2px;
+    text-transform:uppercase;
+    display:block;
+    margin-bottom:4px;
+  }
+  .stats{
+    font-size:12px;
+    color:var(--ink-dim);
+    display:flex;
+    gap:18px;
+  }
+  .stats b{color:var(--ink);}
+  nav.tabs{
+    display:flex;
+    gap:2px;
+    margin:18px 0 0 0;
+  }
+  nav.tabs button{
+    font-family:var(--font-mono);
+    background:none;
+    border:none;
+    border-bottom:2px solid transparent;
+    color:var(--ink-dim);
+    padding:10px 4px;
+    margin-right:26px;
+    font-size:13px;
+    letter-spacing:0.5px;
+    cursor:pointer;
+    text-transform:uppercase;
+  }
+  nav.tabs button.active{
+    color:var(--amber);
+    border-bottom-color:var(--amber);
+  }
+  main{
+    padding:24px 32px 80px 32px;
+  }
+  .hint-bar{
+    font-size:11px;
+    color:var(--ink-dim);
+    margin-bottom:18px;
+    letter-spacing:0.3px;
+  }
+  .hint-bar kbd{
+    background:var(--bg-raised);
+    border:1px solid var(--hairline);
+    border-radius:3px;
+    padding:1px 6px;
+    color:var(--amber);
+    font-family:var(--font-mono);
+  }
+  .empty{
+    color:var(--ink-dim);
+    font-size:13px;
+    padding:40px 0;
+    text-align:center;
+    border:1px dashed var(--hairline);
+  }
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));
+    gap:24px;
+  }
+  .card{
+    background:var(--bg-card);
+    border:1px solid var(--hairline);
+    position:relative;
+    transition:opacity 0.25s ease, transform 0.25s ease;
+  }
+  .card.leaving{
+    opacity:0;
+    transform:scale(0.96);
+  }
+  .stamp{
+    position:absolute;
+    top:10px;
+    right:10px;
+    font-family:var(--font-mono);
+    font-size:10px;
+    font-weight:700;
+    letter-spacing:1.5px;
+    text-transform:uppercase;
+    padding:4px 8px;
+    border:1.5px solid currentColor;
+    border-radius:2px;
+    transform:rotate(4deg);
+    z-index:2;
+    background:rgba(22,19,15,0.82);
+  }
+  .stamp.candidate{color:var(--amber);}
+  .stamp.documented{color:var(--ink);}
+  .stamp.rights_pending{color:var(--amber);}
+  .stamp.rights_cleared{color:var(--green);}
+  .stamp.rejected{color:var(--red);}
+
+  .card img{
+    width:100%;
+    height:220px;
+    object-fit:cover;
+    display:block;
+    border-bottom:1px solid var(--hairline);
+    background:#0e0c09;
+  }
+  .card-body{padding:14px 16px 16px 16px;}
+  .card-title{
+    font-family:var(--font-display);
+    font-size:15px;
+    line-height:1.35;
+    margin:0 0 8px 0;
+  }
+  .card-title a{color:var(--ink); text-decoration:none;}
+  .card-title a:hover{color:var(--amber);}
+  .meta-strip{
+    font-size:11px;
+    color:var(--ink-dim);
+    display:flex;
+    gap:12px;
+    flex-wrap:wrap;
+    margin-bottom:12px;
+    border-top:1px dotted var(--hairline);
+    padding-top:8px;
+  }
+  .meta-strip span b{color:var(--ink);}
+
+  /* --- Pistes trouvées par la veille (enrichissement auto) ------------- */
+  .leads{
+    margin-bottom:12px;
+    border:1px solid var(--hairline);
+    border-left:2px solid var(--amber);
+    border-radius:2px;
+    background:var(--bg-raised);
+  }
+  .leads > summary{
+    cursor:pointer;
+    list-style:none;
+    padding:8px 10px;
+    font-size:10.5px;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    color:var(--amber);
+    display:flex;
+    align-items:center;
+    gap:8px;
+    user-select:none;
+  }
+  .leads > summary::-webkit-details-marker{display:none;}
+  .leads > summary::before{content:'▸'; font-size:10px;}
+  .leads[open] > summary::before{content:'▾';}
+  .leads .lead-count{color:var(--ink-dim); text-transform:none; letter-spacing:0;}
+  .leads-body{
+    padding:2px 12px 12px 12px;
+    font-size:11.5px;
+    line-height:1.5;
+  }
+  .leads-body .lead{
+    display:flex;
+    gap:8px;
+    padding:4px 0;
+    border-top:1px dotted var(--hairline);
+  }
+  .leads-body .lead:first-child{border-top:none;}
+  .leads-body .lead .k{
+    color:var(--ink-dim);
+    flex:0 0 82px;
+    text-transform:uppercase;
+    font-size:9.5px;
+    letter-spacing:0.5px;
+    padding-top:1px;
+  }
+  .leads-body .lead .v{color:var(--ink); word-break:break-word; flex:1;}
+  .leads-body .lead .v a{color:var(--amber); text-decoration:none;}
+  .leads-body .lead .v a:hover{text-decoration:underline;}
+  .leads-body .src-tag{
+    font-size:9px;
+    color:var(--ink-dim);
+    border:1px solid var(--hairline);
+    border-radius:2px;
+    padding:0 4px;
+    margin-left:6px;
+    text-transform:uppercase;
+    letter-spacing:0.5px;
+  }
+  .leads-body .agency{
+    display:inline-block;
+    background:var(--amber-dim);
+    color:var(--ink);
+    border-radius:2px;
+    padding:1px 6px;
+    margin:0 4px 3px 0;
+    font-size:10px;
+  }
+  .leads-none{
+    padding:2px 12px 12px 12px;
+    font-size:11px;
+    color:var(--ink-dim);
+    font-style:italic;
+  }
+  .revsearch{
+    display:inline-block;
+    margin-top:6px;
+    font-size:10px;
+    color:var(--amber);
+    text-decoration:none;
+    letter-spacing:0.5px;
+  }
+  .revsearch:hover{text-decoration:underline;}
+
+  .actions{display:flex; gap:8px; flex-wrap:wrap;}
+  button.act{
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:0.5px;
+    text-transform:uppercase;
+    border:1px solid var(--hairline);
+    background:var(--bg-raised);
+    color:var(--ink);
+    padding:7px 10px;
+    cursor:pointer;
+    border-radius:2px;
+  }
+  button.act:hover{border-color:var(--amber); color:var(--amber);}
+  button.act.reject:hover{border-color:var(--red); color:var(--red);}
+
+  .inline-form{
+    margin-top:12px;
+    padding-top:12px;
+    border-top:1px dotted var(--hairline);
+    display:none;
+    flex-direction:column;
+    gap:8px;
+  }
+  .inline-form.open{display:flex;}
+  .inline-form label.field-hint{
+    font-size:9.5px;
+    color:var(--ink-dim);
+    text-transform:uppercase;
+    letter-spacing:0.5px;
+    margin-bottom:-4px;
+  }
+  .inline-form input, .inline-form textarea{
+    font-family:var(--font-mono);
+    background:var(--bg);
+    border:1px solid var(--hairline);
+    color:var(--ink);
+    padding:7px 8px;
+    font-size:12px;
+    border-radius:2px;
+  }
+  .inline-form input.prefilled, .inline-form textarea.prefilled{
+    border-color:var(--amber-dim);
+  }
+  .inline-form textarea{resize:vertical; min-height:44px;}
+  .inline-form .row-actions{display:flex; gap:8px; justify-content:flex-end;}
+  .inline-form button.confirm{
+    background:var(--amber-dim);
+    border-color:var(--amber);
+    color:var(--ink);
+  }
+
+  select#region-filter{
+    font-family:var(--font-mono);
+    background:var(--bg-raised);
+    color:var(--ink);
+    border:1px solid var(--hairline);
+    padding:6px 8px;
+    font-size:12px;
+    margin-bottom:16px;
+    border-radius:2px;
+  }
+
+  .toast{
+    position:fixed;
+    bottom:24px;
+    left:50%;
+    transform:translateX(-50%);
+    background:var(--bg-raised);
+    border:1px solid var(--amber);
+    color:var(--ink);
+    padding:10px 18px;
+    font-size:12px;
+    border-radius:3px;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity 0.3s ease;
+    z-index:50;
+  }
+  .toast.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="masthead">
+    <div>
+      <span class="kicker">Iconiques.org — outil interne</span>
+      <h1>Salle de tri</h1>
+    </div>
+    <div class="stats" id="stats">chargement…</div>
+  </div>
+  <nav class="tabs">
+    <button data-tab="candidate" class="active">À valider</button>
+    <button data-tab="library">Bibliothèque</button>
+    <button data-tab="rights_cleared">Prêt tirage</button>
+  </nav>
+</header>
+
+<main>
+  <div class="hint-bar" id="hint-bar">
+    Raccourcis sur la première carte visible : <kbd>K</kbd> garder · <kbd>R</kbd> rejeter · <kbd>C</kbd> candidat tirage
+    · les <b style="color:var(--amber)">Pistes trouvées</b> (photographe, lieu, source) sont pré-remplies dans le formulaire tirage — à vérifier.
+  </div>
+  <select id="region-filter" style="display:none;">
+    <option value="">Toutes les zones</option>
+  </select>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty" style="display:none;"></div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ---- Configuration ----------------------------------------------------
+const SUPABASE_URL = 'https://YOUR-PROJECT.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR-ANON-KEY';
+// -------------------------------------------------------------------------
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let currentTab = 'candidate';
+let currentRows = [];
+
+const grid = document.getElementById('grid');
+const emptyEl = document.getElementById('empty');
+const statsEl = document.getElementById('stats');
+const regionFilter = document.getElementById('region-filter');
+const hintBar = document.getElementById('hint-bar');
+const toastEl = document.getElementById('toast');
+
+function toast(msg){
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  setTimeout(()=>toastEl.classList.remove('show'), 1800);
+}
+
+function esc(s){
+  return String(s ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function fmtDate(iso){
+  if(!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('fr-FR', {day:'2-digit', month:'short', year:'numeric'});
+}
+
+const STAMP_LABEL = {
+  candidate: 'Candidat',
+  documented: 'Documenté',
+  rights_pending: 'Droits en cours',
+  rights_cleared: 'Droits clarifiés',
+  rejected: 'Rejeté',
+};
+
+const CREDIT_SRC_LABEL = {
+  exif: 'EXIF', iptc: 'IPTC', xmp: 'XMP', comment: 'commentaire', title: 'titre',
+};
+
+async function loadStats(){
+  const statuses = ['candidate','documented','rights_pending','rights_cleared'];
+  const counts = {};
+  for(const s of statuses){
+    const { count } = await sb.from('photos').select('*', {count:'exact', head:true}).eq('status', s);
+    counts[s] = count ?? 0;
+  }
+  statsEl.innerHTML = `
+    <span><b>${counts.candidate}</b> à valider</span>
+    <span><b>${counts.documented + counts.rights_pending + counts.rights_cleared}</b> en bibliothèque</span>
+    <span><b>${counts.rights_cleared}</b> prêts tirage</span>
+  `;
+}
+
+async function loadRegionOptions(){
+  const { data } = await sb.from('photos').select('conflict_region').not('conflict_region','is',null);
+  const regions = [...new Set((data||[]).map(r => r.conflict_region).filter(Boolean))].sort();
+  regionFilter.innerHTML = '<option value="">Toutes les zones</option>' +
+    regions.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('');
+}
+
+async function fetchRows(){
+  let query = sb.from('photos').select('*');
+
+  if(currentTab === 'candidate'){
+    query = query.eq('status','candidate').order('score', {ascending:false});
+  } else if(currentTab === 'library'){
+    query = query.in('status', ['documented','rights_pending','rights_cleared']).order('captured_at', {ascending:false});
+    const region = regionFilter.value;
+    if(region) query = query.eq('conflict_region', region);
+  } else if(currentTab === 'rights_cleared'){
+    query = query.eq('status','rights_cleared').order('captured_at', {ascending:false});
+  }
+
+  const { data, error } = await query.limit(60);
+  if(error){ console.error(error); toast('Erreur de chargement'); return []; }
+  return data || [];
+}
+
+// ---- Pistes trouvées par la veille -----------------------------------
+// Construit un résumé texte des pistes (pour pré-remplir les notes de droits).
+function leadsSummary(row){
+  const parts = [];
+  if(row.credited_photographer){
+    const src = CREDIT_SRC_LABEL[row.credit_source] || row.credit_source || 'auto';
+    parts.push(`Photographe présumé : ${row.credited_photographer} (source ${src}, à vérifier)`);
+  }
+  if(row.exif_copyright && row.exif_copyright !== row.credited_photographer)
+    parts.push(`Copyright EXIF : ${row.exif_copyright}`);
+  if(row.exif_credit && row.exif_credit !== row.credited_photographer)
+    parts.push(`Crédit IPTC : ${row.exif_credit}`);
+  if(Array.isArray(row.agencies) && row.agencies.length)
+    parts.push(`Agence(s) citée(s) : ${row.agencies.join(', ')}`);
+  if(row.location_guess) parts.push(`Lieu présumé : ${row.location_guess}`);
+  if(row.capture_datetime) parts.push(`Prise de vue : ${fmtDate(row.capture_datetime)}`);
+  if(Array.isArray(row.source_links) && row.source_links.length)
+    parts.push(`Source(s) presse : ${row.source_links.join(' ')}`);
+  return parts.join('\n');
+}
+
+function leadRow(k, vHtml){
+  return `<div class="lead"><span class="k">${k}</span><span class="v">${vHtml}</span></div>`;
+}
+
+function enrichHtml(row){
+  const leads = [];
+
+  if(row.credited_photographer){
+    const src = CREDIT_SRC_LABEL[row.credit_source] || row.credit_source || 'auto';
+    leads.push(leadRow('Photographe',
+      `${esc(row.credited_photographer)}<span class="src-tag">${esc(src)}</span>`));
+  }
+  if(row.exif_copyright && row.exif_copyright !== row.credited_photographer)
+    leads.push(leadRow('Copyright', esc(row.exif_copyright)));
+  if(row.exif_credit && row.exif_credit !== row.credited_photographer)
+    leads.push(leadRow('Crédit', esc(row.exif_credit)));
+
+  if(Array.isArray(row.agencies) && row.agencies.length){
+    leads.push(leadRow('Agences',
+      row.agencies.map(a => `<span class="agency">${esc(a)}</span>`).join('')));
+  }
+
+  // Lieu : GPS -> lien carte, sinon texte
+  if(typeof row.gps_lat === 'number' && typeof row.gps_lon === 'number'){
+    const ll = `${row.gps_lat.toFixed(5)},${row.gps_lon.toFixed(5)}`;
+    leads.push(leadRow('Lieu (GPS)',
+      `<a href="https://www.openstreetmap.org/?mlat=${row.gps_lat}&mlon=${row.gps_lon}#map=12/${row.gps_lat}/${row.gps_lon}" target="_blank" rel="noopener">${esc(ll)}</a>`));
+  } else if(row.location_guess){
+    leads.push(leadRow('Lieu', esc(row.location_guess)));
+  }
+
+  if(row.capture_datetime)
+    leads.push(leadRow('Prise le', esc(fmtDate(row.capture_datetime))));
+  if(row.camera_make || row.camera_model)
+    leads.push(leadRow('Appareil', esc([row.camera_make, row.camera_model].filter(Boolean).join(' '))));
+  if(row.exif_caption)
+    leads.push(leadRow('Légende', esc(row.exif_caption)));
+
+  if(Array.isArray(row.source_links) && row.source_links.length){
+    const links = row.source_links.map(u => {
+      let host = u; try { host = new URL(u).hostname.replace(/^www\./,''); } catch{}
+      return `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(host)}</a>`;
+    }).join(' · ');
+    leads.push(leadRow('Sources', links));
+  }
+
+  // Recherche image inversée (manuel) — toujours proposé.
+  const rev = row.image_url
+    ? `<a class="revsearch" href="https://lens.google.com/uploadbyurl?url=${encodeURIComponent(row.image_url)}" target="_blank" rel="noopener">↗ recherche image inversée (Google Lens)</a>`
+    : '';
+
+  const count = leads.length;
+  const enriched = row.enriched_at;
+
+  const bodyHtml = count
+    ? `<div class="leads-body">${leads.join('')}${rev}</div>`
+    : `<div class="leads-none">Aucune piste automatique${enriched ? '' : ' (pas encore enrichi par la veille)'}.${rev ? '<br>'+rev : ''}</div>`;
+
+  return `
+  <details class="leads" ${count ? 'open' : ''}>
+    <summary>Pistes trouvées <span class="lead-count">${count ? '· '+count : '· 0'}</span></summary>
+    ${bodyHtml}
+  </details>`;
+}
+
+function cardTemplate(row){
+  const stamp = STAMP_LABEL[row.status] || row.status;
+  const showTriage = currentTab === 'candidate';
+
+  // Pré-remplissage du formulaire tirage à partir des pistes auto.
+  const preRegion = esc(row.location_guess || '');
+  const prePhotog = esc(row.credited_photographer || '');
+  const preNotes  = esc(leadsSummary(row));
+
+  return `
+  <div class="card" data-id="${row.id}">
+    <span class="stamp ${row.status}">${stamp}</span>
+    <img src="${esc(row.image_url)}" loading="lazy" alt="">
+    <div class="card-body">
+      <p class="card-title"><a href="${esc(row.source_url)}" target="_blank" rel="noopener">${esc(row.title || 'Sans titre')}</a></p>
+      <div class="meta-strip">
+        <span>r/<b>${esc(row.subreddit || '—')}</b></span>
+        <span>↑ <b>${row.score ?? '—'}</b></span>
+        <span>💬 <b>${row.num_comments ?? '—'}</b></span>
+        <span><b>${fmtDate(row.posted_at)}</b></span>
+        ${row.conflict_region ? `<span>zone: <b>${esc(row.conflict_region)}</b></span>` : ''}
+      </div>
+
+      ${showTriage ? enrichHtml(row) : ''}
+
+      ${showTriage ? `
+      <div class="actions">
+        <button class="act keep" data-action="documented">Garder</button>
+        <button class="act tirage" data-action="rights_pending">Candidat tirage</button>
+        <button class="act reject" data-action="rejected">Rejeter</button>
+      </div>
+      <div class="inline-form" data-form="documented">
+        <input type="text" placeholder="Zone / conflit (ex: Iran, Soudan, Gaza)" data-field="conflict_region" value="${preRegion}">
+        <textarea placeholder="Description / contexte"  data-field="description">${esc(row.exif_caption || '')}</textarea>
+        <div class="row-actions">
+          <button class="act confirm" data-confirm="documented">Confirmer</button>
+        </div>
+      </div>
+      <div class="inline-form" data-form="rights_pending">
+        <label class="field-hint">Champs pré-remplis par la veille — vérifie avant de confirmer</label>
+        <input type="text" placeholder="Zone / conflit" data-field="conflict_region" value="${preRegion}" class="${preRegion?'prefilled':''}">
+        <textarea placeholder="Description / contexte" data-field="description">${esc(row.exif_caption || '')}</textarea>
+        <input type="text" placeholder="Photographe (si identifié)" data-field="photographer_name" value="${prePhotog}" class="${prePhotog?'prefilled':''}">
+        <textarea placeholder="Notes sur les droits (contact, statut licence...)" data-field="rights_notes" class="${preNotes?'prefilled':''}">${preNotes}</textarea>
+        <div class="row-actions">
+          <button class="act confirm" data-confirm="rights_pending">Marquer en cours de droits</button>
+        </div>
+      </div>
+      ` : ''}
+
+      ${!showTriage && row.status === 'rights_pending' ? `
+      <div class="actions">
+        <button class="act" data-action="rights_cleared">Marquer droits clarifiés</button>
+      </div>
+      ` : ''}
+    </div>
+  </div>`;
+}
+
+function render(rows){
+  currentRows = rows;
+  if(rows.length === 0){
+    grid.innerHTML = '';
+    emptyEl.style.display = 'block';
+    emptyEl.textContent = currentTab === 'candidate'
+      ? 'Aucun candidat en attente — le scanner tourne toutes les 6h.'
+      : 'Rien ici pour le moment.';
+    return;
+  }
+  emptyEl.style.display = 'none';
+  grid.innerHTML = rows.map(cardTemplate).join('');
+}
+
+async function refresh(){
+  const rows = await fetchRows();
+  render(rows);
+  loadStats();
+}
+
+async function updateStatus(id, status, extraFields = {}){
+  const payload = { status, ...extraFields, validated_at: new Date().toISOString() };
+  const { error } = await sb.from('photos').update(payload).eq('id', id);
+  if(error){ console.error(error); toast('Échec de la mise à jour'); return; }
+
+  const card = grid.querySelector(`.card[data-id="${id}"]`);
+  if(card){
+    card.classList.add('leaving');
+    setTimeout(() => { refresh(); }, 250);
+  } else {
+    refresh();
+  }
+  toast(`Statut mis à jour : ${STAMP_LABEL[status] || status}`);
+}
+
+grid.addEventListener('click', (e) => {
+  const card = e.target.closest('.card');
+  if(!card) return;
+  const id = card.dataset.id;
+
+  const actionBtn = e.target.closest('button.act[data-action]');
+  if(actionBtn){
+    const action = actionBtn.dataset.action;
+    if(action === 'documented' || action === 'rights_pending'){
+      const form = card.querySelector(`.inline-form[data-form="${action}"]`);
+      if(form) form.classList.toggle('open');
+      return;
+    }
+    updateStatus(id, action);
+    return;
+  }
+
+  const confirmBtn = e.target.closest('button[data-confirm]');
+  if(confirmBtn){
+    const status = confirmBtn.dataset.confirm;
+    const form = confirmBtn.closest('.inline-form');
+    const fields = {};
+    form.querySelectorAll('[data-field]').forEach(el => {
+      if(el.value.trim()) fields[el.dataset.field] = el.value.trim();
+    });
+    updateStatus(id, status, fields);
+  }
+});
+
+document.querySelectorAll('nav.tabs button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('nav.tabs button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentTab = btn.dataset.tab;
+    regionFilter.style.display = currentTab === 'library' ? 'inline-block' : 'none';
+    hintBar.style.display = currentTab === 'candidate' ? 'block' : 'none';
+    if(currentTab === 'library') loadRegionOptions();
+    refresh();
+  });
+});
+
+regionFilter.addEventListener('change', refresh);
+
+document.addEventListener('keydown', (e) => {
+  if(currentTab !== 'candidate') return;
+  const tag = (e.target.tagName || '').toLowerCase();
+  if(tag === 'input' || tag === 'textarea') return; // ne pas capter la frappe dans les formulaires
+  if(!['k','r','c'].includes(e.key.toLowerCase())) return;
+  const firstCard = grid.querySelector('.card');
+  if(!firstCard) return;
+  const id = firstCard.dataset.id;
+  const key = e.key.toLowerCase();
+  if(key === 'k') updateStatus(id, 'documented');
+  if(key === 'r') updateStatus(id, 'rejected');
+  if(key === 'c'){
+    const form = firstCard.querySelector('.inline-form[data-form="rights_pending"]');
+    if(form) form.classList.add('open');
+  }
+});
+
+refresh();
+</script>
+</body>
+</html>
