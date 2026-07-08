@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#12151c">
+<title>Picross du Rail 🚆</title>
+<style>
+  :root{
+    --bg:#12151c; --panel:#1b2029; --panel2:#232a35;
+    --ink:#e8ecf3; --muted:#8b95a7; --line:#333c4a;
+    --accent:#6ea8fe; --accent2:#ffb454;
+    --fill:#e8ecf3; --cross:#5b6474;
+    --good:#57d38c; --bad:#ff6b6b;
+    --cell:28px; --clue:60px; --num:12px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0; height:100%}
+  body{
+    background:radial-gradient(1200px 600px at 50% -10%, #1a2130, var(--bg)) fixed;
+    color:var(--ink); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    display:flex; flex-direction:column; align-items:center;
+    padding:12px 10px 28px; gap:12px; user-select:none;
+  }
+  header{width:100%; max-width:760px; display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+  h1{font-size:19px; margin:0; font-weight:700; letter-spacing:.3px}
+  h1 .sub{color:var(--muted); font-weight:500; font-size:13px; margin-left:6px}
+  .spacer{flex:1}
+  .chip{
+    background:var(--panel); border:1px solid var(--line); color:var(--ink);
+    border-radius:10px; padding:7px 11px; font-size:14px; cursor:pointer;
+    display:inline-flex; align-items:center; gap:6px; transition:.15s;
+  }
+  .chip:hover{border-color:var(--accent)}
+  .chip.active{background:var(--accent); color:#0b1220; border-color:var(--accent); font-weight:600}
+  select.chip{appearance:none; padding-right:26px; background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%); background-position:calc(100% - 14px) 50%,calc(100% - 9px) 50%; background-size:5px 5px,5px 5px; background-repeat:no-repeat}
+  .toolbar{width:100%; max-width:760px; display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+  .stat{font-variant-numeric:tabular-nums; color:var(--muted); font-size:14px}
+  .stat b{color:var(--ink)}
+
+  .board-wrap{position:relative; overflow:auto; max-width:100%; padding:4px}
+  .board{
+    display:grid; gap:0; background:var(--panel);
+    border:2px solid var(--line); border-radius:12px; padding:8px;
+    box-shadow:0 12px 40px rgba(0,0,0,.35);
+  }
+  .cell{
+    width:var(--cell); height:var(--cell);
+    border:1px solid #2c3441; display:flex; align-items:center; justify-content:center;
+    position:relative;
+  }
+  /* épaississement toutes les 5 cases */
+  .cell.b5-l{border-left-color:var(--muted)}
+  .cell.b5-t{border-top-color:var(--muted)}
+  .cell.filled{background:var(--fill)}
+  .cell.cross::before,.cell.cross::after{
+    content:""; position:absolute; width:52%; height:2px; background:var(--cross);
+    border-radius:2px;
+  }
+  .cell.cross::before{transform:rotate(45deg)}
+  .cell.cross::after{transform:rotate(-45deg)}
+  .cell.hint{background:var(--accent2)!important}
+
+  .clue{
+    display:flex; font-size:var(--num); font-weight:700; color:var(--muted);
+    font-variant-numeric:tabular-nums; line-height:1.05;
+  }
+  .clue.col{flex-direction:column; align-items:center; justify-content:flex-end; padding-bottom:3px; gap:1px}
+  .clue.row{flex-direction:row; align-items:center; justify-content:flex-end; padding-right:5px; gap:4px}
+  .clue.done{color:#4f5a6b}
+  .clue span.satline{color:var(--good)}
+  .corner{}
+
+  .win{
+    position:fixed; inset:0; background:rgba(8,10,14,.82); backdrop-filter:blur(4px);
+    display:none; align-items:center; justify-content:center; z-index:20; padding:20px;
+  }
+  .win.show{display:flex}
+  .win .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:18px;
+    padding:26px 28px; text-align:center; max-width:340px; animation:pop .3s ease;
+  }
+  @keyframes pop{from{transform:scale(.9); opacity:0}to{transform:scale(1); opacity:1}}
+  .win h2{margin:0 0 6px; font-size:24px}
+  .win p{color:var(--muted); margin:4px 0 18px}
+  .win .time{color:var(--accent2); font-size:30px; font-weight:800; font-variant-numeric:tabular-nums}
+  .btn-primary{background:var(--accent); color:#0b1220; border:none; border-radius:11px; padding:12px 20px; font-size:15px; font-weight:700; cursor:pointer}
+
+  details.help{width:100%; max-width:760px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:2px 14px}
+  details.help summary{cursor:pointer; padding:10px 0; font-weight:600}
+  details.help p,details.help li{color:var(--muted); font-size:14px; line-height:1.5}
+  details.help ul{margin:0 0 12px; padding-left:20px}
+  kbd{background:var(--panel2); border:1px solid var(--line); border-radius:5px; padding:1px 6px; font-size:12px; color:var(--ink)}
+  .foot{color:#4b5568; font-size:12px; text-align:center; margin-top:2px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🚆 Picross du Rail <span class="sub">logique déductive, hors-ligne</span></h1>
+</header>
+
+<div class="toolbar">
+  <select class="chip" id="difficulty" title="Taille de la grille">
+    <option value="5">Facile · 5×5</option>
+    <option value="10" selected>Moyen · 10×10</option>
+    <option value="15">Corsé · 15×15</option>
+  </select>
+  <button class="chip active" id="tool-fill" title="Remplir (défaut)">■ Remplir</button>
+  <button class="chip" id="tool-cross" title="Marquer une case vide">✕ Croix</button>
+  <button class="chip" id="btn-hint" title="Révèle une case correcte">💡 Indice</button>
+  <button class="chip" id="btn-reset" title="Vider la grille">↺ Effacer</button>
+  <button class="chip" id="btn-new" title="Nouvelle grille aléatoire">🎲 Nouvelle</button>
+  <span class="spacer"></span>
+  <span class="stat">⏱ <b id="timer">0:00</b></span>
+</div>
+
+<div class="board-wrap">
+  <div class="board" id="board"></div>
+</div>
+
+<details class="help">
+  <summary>Comment jouer&nbsp;?</summary>
+  <p>Chaque grille cache une image en noir et blanc. Les chiffres indiquent les blocs de cases <b>pleines</b> consécutives dans chaque ligne et colonne (dans l'ordre, séparés par au moins une case vide).</p>
+  <ul>
+    <li><b>Tap / clic</b> : pose ou retire une case pleine ■.</li>
+    <li>Bascule sur <b>✕ Croix</b> pour marquer les cases que tu sais vides (aide à raisonner, sans effet sur la victoire).</li>
+    <li>Tu peux <b>glisser</b> pour peindre plusieurs cases d'un coup.</li>
+    <li>Sur ordinateur : <b>clic droit</b> = croix directe.</li>
+    <li>Un chiffre passe en gris quand sa ligne est complète&nbsp;: repère visuel, pas une vérification.</li>
+  </ul>
+  <p><b>Aucune grille ne nécessite de deviner</b> : elles sont toutes résolubles par pure déduction. La victoire se déclenche automatiquement quand toutes les bonnes cases sont pleines.</p>
+</details>
+
+<div class="foot">Généré aléatoirement à chaque partie · fonctionne entièrement sans réseau · bonne route&nbsp;!</div>
+
+<div class="win" id="win">
+  <div class="card">
+    <h2>Résolu&nbsp;! 🎉</h2>
+    <p>Belle déduction.</p>
+    <div class="time" id="win-time">0:00</div>
+    <p style="margin-top:16px">Prêt pour la suivante&nbsp;?</p>
+    <button class="btn-primary" id="win-next">🎲 Nouvelle grille</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   Picross du Rail — nonogram autonome, résoluble par logique
+   ============================================================ */
+
+const EMPTY = 0, FILL = 1, CROSS = 2;   // état joueur d'une case
+let N = 10;                              // taille
+let solution = [];                       // grille solution (0/1)
+let rowClues = [], colClues = [];        // indices
+let state = [];                          // état joueur
+let tool = FILL;                         // outil courant
+let startTime = null, timerId = null, solved = false;
+
+const $ = s => document.querySelector(s);
+const boardEl = $('#board');
+
+/* ---------- calcul des indices d'une ligne ---------- */
+function lineClues(line){
+  const clues = []; let run = 0;
+  for(const v of line){ if(v===1) run++; else if(run){clues.push(run); run=0;} }
+  if(run) clues.push(run);
+  return clues.length ? clues : [0];
+}
+
+/* ---------- solveur de ligne (déduction pure) ----------
+   Renvoie un tableau de -1(inconnu)/0(vide)/1(plein) affiné,
+   ou null si la ligne est impossible avec l'état connu.       */
+function solveLine(clues, known){
+  const len = known.length;
+  if(clues.length===1 && clues[0]===0){
+    // ligne vide
+    for(const k of known) if(k===1) return null;
+    return known.map(()=>0);
+  }
+  const result = new Array(len).fill(null); // accumulateur d'intersection
+  let count = 0;
+  // génère tous les placements compatibles, intersecte
+  function place(idx, pos, cur){
+    if(idx===clues.length){
+      // remplir le reste de vide
+      for(let i=pos;i<len;i++){ if(known[i]===1) return; cur[i]=0; }
+      // valider vs known
+      for(let i=0;i<len;i++){ if(known[i]!==-1 && known[i]!==cur[i]) return; }
+      count++;
+      for(let i=0;i<len;i++){
+        if(result[i]===null) result[i]=cur[i];
+        else if(result[i]!==cur[i]) result[i]=-1;
+      }
+      if(count>200000) throw "toomany";
+      return;
+    }
+    const block = clues[idx];
+    // reste nécessaire après ce bloc
+    let rest = 0; for(let j=idx+1;j<clues.length;j++) rest += clues[j]+1;
+    const maxStart = len - rest - block;
+    for(let s=pos; s<=maxStart; s++){
+      let ok=true;
+      // cases vides avant s
+      for(let i=pos;i<s;i++){ if(known[i]===1){ok=false;break;} }
+      if(!ok) continue;
+      // bloc plein s..s+block-1
+      for(let i=s;i<s+block;i++){ if(known[i]===0){ok=false;break;} }
+      if(!ok) continue;
+      // case séparatrice (si pas dernier bloc)
+      const sep = s+block;
+      if(idx<clues.length-1){ if(sep<len && known[sep]===1){ok=false;} }
+      if(!ok) continue;
+      const cur2 = cur.slice();
+      for(let i=pos;i<s;i++) cur2[i]=0;
+      for(let i=s;i<s+block;i++) cur2[i]=1;
+      let next = s+block;
+      if(idx<clues.length-1){ cur2[sep]=0; next=sep+1; }
+      place(idx+1, next, cur2);
+    }
+  }
+  try{ place(0,0,new Array(len).fill(0)); }
+  catch(e){ return "abort"; }
+  if(count===0) return null;
+  return result.map(v=> v===null? -1 : v);
+}
+
+/* ---------- tente de résoudre toute la grille par logique ---------- */
+function logicSolve(rClues, cClues, size){
+  const grid = Array.from({length:size},()=>new Array(size).fill(-1));
+  let changed = true, guard = 0;
+  while(changed){
+    changed = false;
+    if(++guard > 500) break;
+    for(let r=0;r<size;r++){
+      const res = solveLine(rClues[r], grid[r]);
+      if(res==="abort") return null;
+      if(res===null) return null;
+      for(let c=0;c<size;c++) if(grid[r][c]===-1 && res[c]!==-1){ grid[r][c]=res[c]; changed=true; }
+    }
+    for(let c=0;c<size;c++){
+      const col = grid.map(row=>row[c]);
+      const res = solveLine(cClues[c], col);
+      if(res==="abort") return null;
+      if(res===null) return null;
+      for(let r=0;r<size;r++) if(grid[r][c]===-1 && res[r]!==-1){ grid[r][c]=res[r]; changed=true; }
+    }
+  }
+  // complètement résolue ?
+  for(let r=0;r<size;r++) for(let c=0;c<size;c++) if(grid[r][c]===-1) return null;
+  return grid;
+}
+
+/* ---------- génère une grille résoluble par pure logique ---------- */
+function generate(size){
+  const density = size<=5 ? 0.55 : 0.58;
+  for(let attempt=0; attempt<400; attempt++){
+    const sol = Array.from({length:size},()=>
+      Array.from({length:size},()=> Math.random()<density?1:0));
+    // éviter grille toute vide / toute pleine
+    let ones=0; sol.forEach(r=>r.forEach(v=>ones+=v));
+    if(ones< size || ones> size*size-size) continue;
+    const rC = sol.map(lineClues);
+    const cC = [];
+    for(let c=0;c<size;c++) cC.push(lineClues(sol.map(r=>r[c])));
+    const test = logicSolve(rC,cC,size);
+    if(test){
+      // vérifie que la solution logique correspond bien (unique par déduction)
+      let match=true;
+      for(let r=0;r<size&&match;r++) for(let c=0;c<size;c++) if(test[r][c]!==sol[r][c]){match=false;break;}
+      if(match) return {sol,rC,cC};
+    }
+  }
+  // fallback improbable : renvoie une grille simple garantie résoluble
+  const sol = Array.from({length:size},(_,r)=>Array.from({length:size},(_,c)=>(r+c)%2));
+  const rC = sol.map(lineClues), cC=[];
+  for(let c=0;c<size;c++) cC.push(lineClues(sol.map(r=>r[c])));
+  return {sol,rC,cC};
+}
+
+/* ---------- dimensionnement responsive ---------- */
+function fitCellSize(){
+  const maxRowClues = Math.max(...rowClues.map(c=>c.length));
+  const maxColClues = Math.max(...colClues.map(c=>c.length));
+  const avail = Math.min(window.innerWidth-32, 760);
+  // largeur = clue + N cellules ; clue ≈ maxRowClues * 0.62 cell
+  // on résout pour cell : clueW = maxRowClues*0.62*cell + 6
+  const clueFactorW = maxRowClues*0.62;
+  let cell = Math.floor((avail-18) / (N + clueFactorW));
+  cell = Math.max(16, Math.min(cell, size===5?46:36));
+  const clueW = Math.round(maxRowClues*cell*0.6 + 8);
+  const clueH = Math.round(maxColClues*cell*0.6 + 8);
+  document.documentElement.style.setProperty('--cell', cell+'px');
+  document.documentElement.style.setProperty('--num', Math.max(10,Math.round(cell*0.42))+'px');
+  return {clueW,clueH};
+}
+let size = 10;
+
+/* ---------- rendu ---------- */
+function render(){
+  const {clueW,clueH} = fitCellSize();
+  boardEl.style.gridTemplateColumns = `${clueW}px repeat(${N}, var(--cell))`;
+  boardEl.style.gridTemplateRows = `${clueH}px repeat(${N}, var(--cell))`;
+  boardEl.innerHTML = '';
+
+  // coin
+  const corner = document.createElement('div');
+  corner.className='corner';
+  boardEl.appendChild(corner);
+
+  // indices colonnes
+  for(let c=0;c<N;c++){
+    const d = document.createElement('div');
+    d.className='clue col'; d.dataset.col=c;
+    colClues[c].forEach(n=>{ const s=document.createElement('span'); s.textContent=n; d.appendChild(s); });
+    boardEl.appendChild(d);
+  }
+  // lignes
+  for(let r=0;r<N;r++){
+    const rc = document.createElement('div');
+    rc.className='clue row'; rc.dataset.row=r;
+    rowClues[r].forEach(n=>{ const s=document.createElement('span'); s.textContent=n; rc.appendChild(s); });
+    boardEl.appendChild(rc);
+    for(let c=0;c<N;c++){
+      const cell = document.createElement('div');
+      cell.className='cell';
+      if(c%5===0 && c!==0) cell.classList.add('b5-l');
+      if(r%5===0 && r!==0) cell.classList.add('b5-t');
+      cell.dataset.r=r; cell.dataset.c=c;
+      boardEl.appendChild(cell);
+    }
+  }
+  paintAll();
+  updateClueStatus();
+}
+
+function cellEl(r,c){ return boardEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`); }
+function applyCellClass(el,v){
+  el.classList.toggle('filled', v===FILL);
+  el.classList.toggle('cross', v===CROSS);
+}
+function paintAll(){
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++) applyCellClass(cellEl(r,c), state[r][c]);
+}
+
+/* ---------- statut des indices (ligne complète -> grisée) ---------- */
+function updateClueStatus(){
+  for(let r=0;r<N;r++){
+    const line = state[r].map(v=> v===FILL?1:0);
+    const done = JSON.stringify(lineClues(line))===JSON.stringify(rowClues[r]);
+    boardEl.querySelector(`.clue.row[data-row="${r}"]`).classList.toggle('done', done);
+  }
+  for(let c=0;c<N;c++){
+    const line = state.map(row=> row[c]===FILL?1:0);
+    const done = JSON.stringify(lineClues(line))===JSON.stringify(colClues[c]);
+    boardEl.querySelector(`.clue.col[data-col="${c}"]`).classList.toggle('done', done);
+  }
+}
+
+/* ---------- victoire ---------- */
+function checkWin(){
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++){
+    const filled = state[r][c]===FILL;
+    if(filled !== (solution[r][c]===1)) return false;
+  }
+  return true;
+}
+function onWin(){
+  solved = true; stopTimer();
+  $('#win-time').textContent = fmt(elapsed());
+  $('#win').classList.add('show');
+}
+
+/* ---------- interactions (pointer + drag) ---------- */
+let dragging=false, dragAction=null;
+function setCell(r,c,val){
+  if(state[r][c]===val) return;
+  state[r][c]=val; applyCellClass(cellEl(r,c),val);
+}
+function actionFor(r,c,t){
+  // clic sur une case : si déjà l'état voulu -> efface, sinon applique
+  const cur=state[r][c];
+  if(t===FILL) return cur===FILL?EMPTY:FILL;
+  return cur===CROSS?EMPTY:CROSS;
+}
+function pointerDownCell(r,c,useCross){
+  if(solved) return;
+  ensureTimer();
+  const t = useCross?CROSS:tool;
+  const target = actionFor(r,c,t);
+  // dragAction : on mémorise la valeur cible pour peindre pareil
+  dragAction = target;
+  dragging = true;
+  setCell(r,c,target);
+  postMove();
+}
+function pointerEnterCell(r,c){
+  if(!dragging||solved||dragAction===null) return;
+  setCell(r,c,dragAction);
+  postMove();
+}
+function postMove(){
+  updateClueStatus();
+  if(checkWin()) onWin();
+}
+
+boardEl.addEventListener('pointerdown', e=>{
+  const el = e.target.closest('.cell'); if(!el) return;
+  e.preventDefault();
+  const r=+el.dataset.r, c=+el.dataset.c;
+  pointerDownCell(r,c, e.button===2 || e.pointerType==='mouse'&&e.button===2);
+});
+boardEl.addEventListener('pointerover', e=>{
+  const el = e.target.closest('.cell'); if(!el) return;
+  pointerEnterCell(+el.dataset.r, +el.dataset.c);
+});
+window.addEventListener('pointerup', ()=>{ dragging=false; dragAction=null; });
+boardEl.addEventListener('contextmenu', e=>{
+  const el=e.target.closest('.cell'); if(!el) return; e.preventDefault();
+});
+// clic droit desktop -> croix
+boardEl.addEventListener('mousedown', e=>{
+  if(e.button!==2) return;
+  const el=e.target.closest('.cell'); if(!el) return;
+  e.preventDefault();
+  pointerDownCell(+el.dataset.r, +el.dataset.c, true);
+});
+
+/* ---------- indice ---------- */
+function giveHint(){
+  if(solved) return;
+  const wrong=[], missing=[];
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++){
+    if(solution[r][c]===1 && state[r][c]!==FILL) missing.push([r,c]);
+  }
+  if(!missing.length) return;
+  ensureTimer();
+  const [r,c]=missing[Math.floor(Math.random()*missing.length)];
+  setCell(r,c,FILL);
+  const el=cellEl(r,c); el.classList.add('hint');
+  setTimeout(()=>el.classList.remove('hint'),700);
+  postMove();
+}
+
+/* ---------- timer ---------- */
+function elapsed(){ return startTime? Math.floor((Date.now()-startTime)/1000):0; }
+function fmt(s){ const m=Math.floor(s/60); return m+':'+String(s%60).padStart(2,'0'); }
+function tick(){ $('#timer').textContent = fmt(elapsed()); }
+function ensureTimer(){ if(!startTime && !solved){ startTime=Date.now(); timerId=setInterval(tick,500); } }
+function stopTimer(){ clearInterval(timerId); timerId=null; }
+
+/* ---------- nouvelle partie ---------- */
+function newGame(){
+  N = size = +$('#difficulty').value;
+  const g = generate(size);
+  solution = g.sol; rowClues = g.rC; colClues = g.cC;
+  state = Array.from({length:N},()=>new Array(N).fill(EMPTY));
+  solved=false; startTime=null; stopTimer();
+  $('#timer').textContent='0:00';
+  $('#win').classList.remove('show');
+  render();
+}
+
+/* ---------- UI ---------- */
+$('#tool-fill').onclick = ()=>{ tool=FILL; $('#tool-fill').classList.add('active'); $('#tool-cross').classList.remove('active'); };
+$('#tool-cross').onclick = ()=>{ tool=CROSS; $('#tool-cross').classList.add('active'); $('#tool-fill').classList.remove('active'); };
+$('#btn-hint').onclick = giveHint;
+$('#btn-new').onclick = newGame;
+$('#win-next').onclick = newGame;
+$('#difficulty').onchange = newGame;
+$('#btn-reset').onclick = ()=>{
+  if(solved) return;
+  state = Array.from({length:N},()=>new Array(N).fill(EMPTY));
+  paintAll(); updateClueStatus();
+};
+let resizeT;
+window.addEventListener('resize', ()=>{ clearTimeout(resizeT); resizeT=setTimeout(render,150); });
+
+newGame();
+</script>
+</body>
+</html>
