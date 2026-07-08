@@ -88,6 +88,9 @@
 
   details.help{width:100%; max-width:760px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:2px 14px}
   details.help summary{cursor:pointer; padding:10px 0; font-weight:600}
+  .nav{width:100%; max-width:760px; display:flex; gap:8px}
+  .nav a{color:var(--muted); text-decoration:none; font-size:13px; border:1px solid var(--line); border-radius:8px; padding:5px 10px}
+  .nav a.here{color:#0b1220; background:var(--accent2); border-color:var(--accent2); font-weight:700}
   details.help p,details.help li{color:var(--muted); font-size:14px; line-height:1.5}
   details.help ul{margin:0 0 12px; padding-left:20px}
   kbd{background:var(--panel2); border:1px solid var(--line); border-radius:5px; padding:1px 6px; font-size:12px; color:var(--ink)}
@@ -99,6 +102,11 @@
 <header>
   <h1>🚆 Picross du Rail <span class="sub">logique déductive, hors-ligne</span></h1>
 </header>
+
+<nav class="nav">
+  <a class="here" href="jeu.html">🧩 Picross</a>
+  <a href="demineur.html">💣 Démineur</a>
+</nav>
 
 <div class="toolbar">
   <select class="chip" id="difficulty" title="Taille de la grille">
