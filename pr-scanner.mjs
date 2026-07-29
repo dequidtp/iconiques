@@ -43,6 +43,11 @@ const TIER1_SOURCES = [
   'les echos',      // couvre "Les Échos"
   'financial times',
   'le monde',
+  'bloomberg',
+  'reuters',
+  'challenges',
+  'la tribune',
+  'le figaro',      // le flux RSS ne distingue pas la rubrique → couvre "Le Figaro" (dont Économie)
 ];
 
 // Marqueurs d'interview / entretien dans un titre (FR + EN).

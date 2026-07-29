@@ -107,7 +107,7 @@ Sur une **fenêtre glissante de 90 jours**, pour chaque entreprise :
 
 - On compte les titres **positifs (P)**, **négatifs (N)** et **neutres (Z)** (analyse lexicale du titre, FR + EN, avec gestion basique de la négation — voir `scoreSentiment` dans `pr-scanner.mjs`).
 - **Balance de sentiment** : `balance = (P − N) / (P + N + 5)`, comprise entre −1 et +1. Le `+5` est un lissage qui évite qu'un seul article fasse basculer l'indice quand le volume est faible.
-- **Bonus interviews** : chaque **interview/entretien du PDG dans un média cible** (Investir, Les Échos, Financial Times, Le Monde) ajoute des points, **dégressifs avec l'ancienneté** (une interview d'hier pèse plus qu'une d'il y a 3 mois), plafonnés à +18.
+- **Bonus interviews** : chaque **interview/entretien du PDG dans un média cible** (Investir, Les Échos, Financial Times, Le Monde, Bloomberg, Reuters, Challenges, La Tribune, Le Figaro) ajoute des points, **dégressifs avec l'ancienneté** (une interview d'hier pèse plus qu'une d'il y a 3 mois), plafonnés à +18. La liste exacte est la constante `TIER1_SOURCES` en haut de `pr-scanner.mjs`.
 - **Indice** : `100 + 40 × balance + bonus`.
   - **~100** = presse neutre ;
   - **> 100** = bonne presse (jusqu'à ~158 avec forte couverture positive + interviews) ;
@@ -120,7 +120,7 @@ Chaque run écrit **un point par entreprise et par jour** dans `pr_index_snapsho
 ## Mise en route
 
 1. **Supabase** : dans le SQL Editor, exécute `schema-pr.sql` (ré-exécutable, il coexiste avec la table `photos`).
-2. **Déclare tes entreprises** : ajoute des lignes dans la table `companies` (un exemple `insert` commenté est fourni en bas de `schema-pr.sql`). Champs clés :
+2. **Déclare tes entreprises** : le plus simple pour démarrer — exécute **`seed-cac40.sql`** qui insère d'un coup **les 40 valeurs du CAC 40** (nom, PDG, ticker). ⚠️ Les PDG bougent (changements récents chez Stellantis, Schneider, Renault, Kering, Vinci…) : `ceo_name` sert à détecter les interviews, corrige-le si un dirigeant a changé. Tu peux ensuite ajouter/retirer des lignes à la main dans la table `companies` (un exemple `insert` commenté est aussi en bas de `schema-pr.sql`). Champs clés :
    - `name` — nom affiché ;
    - `ceo_name` (+ `ceo_aliases`) — sert à repérer les interviews du PDG ;
    - `news_query` (facultatif) — requête Google News personnalisée pour désambiguïser (ex. « Orange » l'opérateur vs le fruit) ;
