@@ -1,0 +1,22 @@
+name: Indice RP (Public Relations)
+
+on:
+  schedule:
+    - cron: '30 5 * * *'   # une fois par jour à 05:30 UTC — un point d'indice / jour
+  workflow_dispatch: {}      # lancement manuel depuis l'onglet Actions
+
+jobs:
+  pr-index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Calculer l'indice RP
+        run: node pr-scanner.mjs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
