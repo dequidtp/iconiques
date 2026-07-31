@@ -1,3 +1,7 @@
 node_modules/
 npm-debug.log*
 .DS_Store
+
+# Secrets locaux — ne jamais committer
+.env
+.env.local
