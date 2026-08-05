@@ -91,46 +91,52 @@ Une photo qui devient virale reste soumise au droit d'auteur de la personne qui 
 
 ---
 
-# Indice RP (Public Relations) — brique indépendante
+# Indice de présence média des dirigeants — brique indépendante
 
-Une seconde brique, autonome, qui **suit la « good public relations » d'entreprises cotées** et en sort **un chiffre par jour, comme un indice boursier** (pour tracer des variations, faire des moyennes, comparer). Elle réutilise la même mécanique que la veille photo (scanner `.mjs` sur GitHub Actions → Supabase → dashboard statique) mais sur des tables séparées.
+Une seconde brique, autonome, qui **suit les prises de parole des dirigeants** (PDG + membres du COMEX) d'entreprises cotées — **interviews, entretiens, podcasts** — et en sort **un chiffre de présence média par jour** (pour tracer des variations, faire des moyennes, comparer). Elle réutilise la même mécanique que la veille photo (scanner `.mjs` sur GitHub Actions → Supabase → dashboard statique) mais sur des tables séparées.
+
+> **Historique :** cette brique a d'abord noté le *sentiment* de tous les articles à propos de chaque entreprise. Elle a été recentrée sur les **prises de parole des dirigeants** uniquement. La table `pr_articles` (sentiment) reste dans le schéma mais n'est plus alimentée ; le scanner écrit désormais dans `pr_interviews`.
 
 Trois pièces :
 
-1. **`schema-pr.sql`** — les tables `companies`, `pr_articles` et `pr_index_snapshots`.
-2. **`pr-scanner.mjs`** + **`.github/workflows/scan-pr.yml`** — un calcul quotidien qui, pour chaque entreprise suivie, récolte les titres d'articles récents (Google News RSS, gratuit, sans clé), les classe positifs/négatifs/neutres, repère les interviews du PDG dans la presse cible, et enregistre **un point d'indice par jour**.
-3. **`pr-dashboard.html`** — le tableau de bord : indice courant + variation, mini-courbe d'historique, barre positif/négatif, ratio, interviews du PDG mises en avant.
+1. **`schema-pr.sql`** — les tables `companies`, `pr_interviews` et `pr_index_snapshots`.
+2. **`pr-scanner.mjs`** + **`.github/workflows/scan-pr.yml`** — un calcul quotidien qui, pour chaque entreprise, cherche les interviews/podcasts de ses dirigeants (Google News RSS, gratuit, sans clé), identifie l'interviewé, et enregistre **un score de présence par jour**.
+3. **`pr-dashboard.html`** — le tableau de bord : score de présence moyen du CAC 40, graphique multi-lignes (3 mois / 6 mois / 1 an) avec filtre par entreprise, et classement des dirigeants les plus présents avec le détail des points.
 
-## Comment l'indice est calculé
+## Comment le score est calculé
 
-Sur une **fenêtre glissante de 90 jours**, pour chaque entreprise :
+Sur une **fenêtre glissante de 90 jours**, pour chaque entreprise, on additionne les points de chaque prise de parole :
 
-- On compte les titres **positifs (P)**, **négatifs (N)** et **neutres (Z)** (analyse lexicale du titre, FR + EN, avec gestion basique de la négation — voir `scoreSentiment` dans `pr-scanner.mjs`).
-- **Balance de sentiment** : `balance = (P − N) / (P + N + 5)`, comprise entre −1 et +1. Le `+5` est un lissage qui évite qu'un seul article fasse basculer l'indice quand le volume est faible.
-- **Bonus interviews** : chaque **interview/entretien du PDG dans un média cible** (Investir, Les Échos, Financial Times, Le Monde, Bloomberg, Reuters, Challenges, La Tribune, Le Figaro) ajoute des points, **dégressifs avec l'ancienneté** (une interview d'hier pèse plus qu'une d'il y a 3 mois), plafonnés à +18. La liste exacte est la constante `TIER1_SOURCES` en haut de `pr-scanner.mjs`.
-- **Indice** : `100 + 40 × balance + bonus`.
-  - **~100** = presse neutre ;
-  - **> 100** = bonne presse (jusqu'à ~158 avec forte couverture positive + interviews) ;
-  - **< 100** = mauvaise presse (plancher ~60).
+```
+score = Σ  base × poids_média × poids_format × récence
+```
 
-Le ratio positif/négatif brut que tu voulais (`P / N`) est aussi stocké tel quel dans chaque snapshot (`ratio_pos_neg`).
+- **base** = 10 points par prise de parole (`POINTS_BASE`) ;
+- **poids_média** : média cible (`TIER1_SOURCES` : Investir, Les Échos, Financial Times, Le Monde, Bloomberg, Reuters, Challenges, La Tribune, Le Figaro) = **×1,5** ; autre média = ×1 ;
+- **poids_format** : podcast = **×1,4**, grand entretien = **×1,3**, interview/entretien standard = ×1 ;
+- **récence** : décroît linéairement sur la fenêtre (une prise de parole d'hier pèse plus qu'une d'il y a 3 mois), avec un plancher à 0,25.
 
-Chaque run écrit **un point par entreprise et par jour** dans `pr_index_snapshots` — c'est cet historique que le dashboard trace, et sur lequel tu peux faire moyennes et variations.
+Le score **part de 0** (dirigeants discrets) et **monte** quand ils s'expriment beaucoup dans de bons médias. Chaque run écrit **un point par entreprise et par jour** dans `pr_index_snapshots` (avec `interview_count`, `tier1_count`, `podcast_count`, `people_count`, `top_people`) — c'est cet historique que le dashboard trace.
+
+### Qui est repéré, et comment
+
+- Le **PDG** de chaque société (colonne `ceo_name` / `ceo_aliases`) est reconnu par son nom dans le titre.
+- Les **autres dirigeants** (COMEX) sont **détectés automatiquement** : quand un titre d'interview/podcast cite l'entreprise et contient un nom propre validé par une fonction (« directeur général », « directrice financière »…) ou un connecteur d'interview, ce nom est extrait comme interviewé. Zéro saisie, mais quelques faux positifs possibles.
 
 ## Mise en route
 
-1. **Supabase** : dans le SQL Editor, exécute `schema-pr.sql` (ré-exécutable, il coexiste avec la table `photos`).
-2. **Déclare tes entreprises** : le plus simple pour démarrer — exécute **`seed-cac40.sql`** qui insère d'un coup **les 40 valeurs du CAC 40** (nom, PDG, ticker). ⚠️ Les PDG bougent (changements récents chez Stellantis, Schneider, Renault, Kering, Vinci…) : `ceo_name` sert à détecter les interviews, corrige-le si un dirigeant a changé. Tu peux ensuite ajouter/retirer des lignes à la main dans la table `companies` (un exemple `insert` commenté est aussi en bas de `schema-pr.sql`). Champs clés :
-   - `name` — nom affiché ;
-   - `ceo_name` (+ `ceo_aliases`) — sert à repérer les interviews du PDG ;
-   - `news_query` (facultatif) — requête Google News personnalisée pour désambiguïser (ex. « Orange » l'opérateur vs le fruit) ;
-   - `active` — passe à `false` pour suspendre une entreprise.
-3. **GitHub Actions** : les secrets `SUPABASE_URL` et `SUPABASE_SERVICE_KEY` (les mêmes que la veille photo) suffisent. Le workflow `scan-pr.yml` tourne une fois par jour et peut être lancé à la main (bouton *Run workflow*).
-4. **Dashboard** : dans `pr-dashboard.html`, renseigne `SUPABASE_URL` / `SUPABASE_ANON_KEY` (clé **anon**), puis déploie-le sur GitHub Pages comme les autres. Il est **en lecture seule** (aucune écriture depuis le navigateur).
+1. **Supabase** : dans le SQL Editor, exécute (ou ré-exécute) **`schema-pr.sql`** — la section « v2 » ajoute la table `pr_interviews` et les colonnes de présence sans rien casser.
+2. **Déclare tes entreprises** : exécute **`seed-cac40.sql`** (les 40 valeurs du CAC 40 avec nom, PDG, ticker). ⚠️ Les PDG bougent (Stellantis, Schneider, Renault, Kering, Vinci…) : `ceo_name` sert à détecter les interviews, corrige-le si besoin. Champs clés :
+   - `ceo_name` (+ `ceo_aliases`) — repère les prises de parole du PDG ;
+   - `aliases` — autres noms/marques (aide à rattacher un dirigeant à la bonne société) ;
+   - `news_query` (facultatif) — requête Google News personnalisée (ex. « Orange » l'opérateur) ;
+   - `active` — `false` pour suspendre une entreprise.
+3. **GitHub Actions** : les secrets `SUPABASE_URL` et `SUPABASE_SERVICE_KEY` suffisent. Le workflow `scan-pr.yml` tourne une fois par jour (et à la main via *Run workflow*).
+4. **Dashboard** : `pr-dashboard.html` (URL + clé publishable), déployé sur GitHub Pages. En lecture seule.
 
 ## Limites connues
 
-- **Sentiment lexical, pas sémantique** : le score repose sur des mots-clés, pas sur une vraie compréhension. L'ironie, le second degré et les tournures ambiguës passent à travers. C'est un **signal agrégé** fiable sur le volume, pas un verdict article par article. `scoreSentiment` est isolée et exportée : on peut la remplacer par un appel LLM plus tard sans toucher au reste du pipeline.
-- **« Longue » interview non vérifiable depuis le flux** : Google News RSS ne donne que le titre, pas la longueur de l'article (et Les Échos / Investir / FT / Le Monde sont derrière des paywalls). Le scanner flague donc une **interview du PDG dans un média cible** (nom du PDG + marqueur « interview/entretien » + source tier-1) sans pouvoir garantir la longueur. À affiner si besoin.
-- **Dépendance à Google News RSS** : flux gratuit mais non officiel ; le nom du média vient du flux et peut être imparfait. La liste des médias « tier-1 » (`TIER1_SOURCES`) et le lexique sont en haut de `pr-scanner.mjs`, faciles à enrichir.
-- **Fenêtre et pondérations** (`WINDOW_DAYS`, `SMOOTHING`, `SENTIMENT_SPAN`, `INTERVIEW_POINTS`…) sont des constantes en tête de `pr-scanner.mjs` — à calibrer une fois que tu vois les premiers indices.
+- **Détection de nom heuristique** : les dirigeants non-PDG sont extraits des titres/résumés Google News. C'est robuste sur les formulations classiques (« Interview de Prénom Nom, directeur… ») mais peut rater un titre atypique ou attribuer un mauvais nom. Le PDG (nom connu) est le plus fiable.
+- **Podcasts partiellement couverts** : pas d'API gratuite propre (Apple/Spotify). On capte les épisodes et reprises indexés par Google News via les mots-clés `podcast/interview/entretien` — la couverture podcast est donc incomplète.
+- **« Longueur » de l'interview non vérifiable** depuis le flux (titre seul, médias souvent en paywall). Le format (podcast / grand entretien / interview) est déduit du titre, pas mesuré.
+- **Dépendance à Google News RSS** : flux gratuit mais non officiel ; le nom du média vient du flux. `TIER1_SOURCES`, les marqueurs d'interview, les rôles et les pondérations (`POINTS_BASE`, `TIER1_WEIGHT`, `PODCAST_WEIGHT`…) sont des constantes en tête de `pr-scanner.mjs`, faciles à ajuster.
