@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Iconiques — Indice RP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#16130f; --bg-raised:#1f1b15; --bg-card:#221e17; --hairline:#35301f;
+    --ink:#ede6d9; --ink-dim:#9c9284; --amber:#e8a33d; --amber-dim:#8a6529;
+    --red:#a8433a; --green:#5c8b74; --neutral:#7a7161;
+    --font-display:'Source Serif 4',Georgia,serif;
+    --font-mono:'Space Mono',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-mono);-webkit-font-smoothing:antialiased;}
+  header{padding:28px 32px 0 32px;}
+  .masthead{display:flex;align-items:baseline;justify-content:space-between;border-bottom:1px solid var(--hairline);padding-bottom:16px;flex-wrap:wrap;gap:12px;}
+  .masthead h1{font-family:var(--font-display);font-weight:700;font-size:26px;margin:0;letter-spacing:.5px;}
+  .kicker{font-size:11px;color:var(--amber);letter-spacing:2px;text-transform:uppercase;display:block;margin-bottom:4px;}
+  .stats{font-size:12px;color:var(--ink-dim);display:flex;gap:18px;flex-wrap:wrap;}
+  .stats b{color:var(--ink);}
+  main{padding:24px 32px 80px 32px;}
+  .hint-bar{font-size:11px;color:var(--ink-dim);margin-bottom:22px;letter-spacing:.3px;line-height:1.6;}
+  .hint-bar code{background:var(--bg-raised);border:1px solid var(--hairline);border-radius:3px;padding:1px 6px;color:var(--amber);}
+  .empty{color:var(--ink-dim);font-size:13px;padding:40px 0;text-align:center;border:1px dashed var(--hairline);}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:24px;}
+  .card{background:var(--bg-card);border:1px solid var(--hairline);border-radius:6px;padding:20px;display:flex;flex-direction:column;gap:14px;}
+  .card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;}
+  .co-name{font-family:var(--font-display);font-weight:700;font-size:20px;margin:0;line-height:1.2;}
+  .co-ceo{font-size:11px;color:var(--ink-dim);margin-top:2px;}
+  .index-box{text-align:right;flex-shrink:0;}
+  .index-value{font-family:var(--font-display);font-weight:700;font-size:34px;line-height:1;}
+  .delta{font-size:12px;margin-top:4px;}
+  .delta.up{color:var(--green);} .delta.down{color:var(--red);} .delta.flat{color:var(--ink-dim);}
+  .spark{width:100%;height:44px;display:block;}
+  .spark-empty{font-size:10px;color:var(--ink-dim);height:44px;display:flex;align-items:center;}
+  .senti-bar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--bg-raised);}
+  .senti-bar .p{background:var(--green);} .senti-bar .n{background:var(--red);} .senti-bar .z{background:var(--neutral);}
+  .metrics{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-dim);flex-wrap:wrap;gap:8px;}
+  .metrics b{color:var(--ink);}
+  .badge{display:inline-block;font-size:10px;letter-spacing:.5px;text-transform:uppercase;padding:2px 7px;border-radius:3px;border:1px solid var(--amber-dim);color:var(--amber);}
+  .interviews{display:flex;flex-direction:column;gap:6px;}
+  .interview-item{font-size:11px;color:var(--ink);border-left:2px solid var(--amber);padding-left:8px;line-height:1.4;}
+  .interview-item span{color:var(--ink-dim);}
+  details{border-top:1px solid var(--hairline);padding-top:10px;}
+  summary{font-size:11px;color:var(--ink-dim);cursor:pointer;letter-spacing:.5px;text-transform:uppercase;}
+  .headlines{list-style:none;margin:10px 0 0 0;padding:0;display:flex;flex-direction:column;gap:8px;}
+  .headlines li{font-size:12px;line-height:1.4;display:flex;gap:8px;align-items:flex-start;}
+  .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:4px;}
+  .dot.positive{background:var(--green);} .dot.negative{background:var(--red);} .dot.neutral{background:var(--neutral);}
+  .headlines a{color:var(--ink);text-decoration:none;}
+  .headlines a:hover{color:var(--amber);text-decoration:underline;}
+  .hl-src{color:var(--ink-dim);font-size:10px;}
+  a.reload{color:var(--amber);font-size:12px;text-decoration:none;border:1px solid var(--amber-dim);padding:5px 12px;border-radius:3px;}
+</style>
+</head>
+<body>
+<header>
+  <div class="masthead">
+    <div>
+      <span class="kicker">Iconiques · Veille réputationnelle</span>
+      <h1>Indice RP</h1>
+    </div>
+    <div class="stats" id="stats"></div>
+  </div>
+</header>
+<main>
+  <div class="hint-bar">
+    Chaque indice est centré sur <b>100</b> (neutre), calculé sur les <b>90 derniers jours</b> :
+    <code>100 + 40·balance + bonus interviews</code>, où <code>balance = (P−N)/(P+N+5)</code>.
+    &gt; 100 = bonne presse · &lt; 100 = mauvaise presse. Une interview du PDG dans un média cible
+    (Investir, Les Échos, Financial Times, Le Monde) ajoute des points, dégressifs avec l'ancienneté.
+    <br>Renseigne <code>SUPABASE_URL</code> / <code>SUPABASE_ANON_KEY</code> ci-dessous et ajoute des
+    entreprises dans la table <code>companies</code>.
+  </div>
+  <div id="content"><div class="empty">Chargement…</div></div>
+</main>
+
+<script>
+// ⚠️ Remplace par tes vraies valeurs (clé ANON, jamais la service_role côté client).
+const SUPABASE_URL = 'https://YOUR-PROJECT.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR-ANON-KEY';
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => (s || '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function sparkline(values){
+  if (values.length < 2) return '<div class="spark-empty">historique insuffisant (revient après quelques jours)</div>';
+  const w = 300, h = 44, pad = 3;
+  const min = Math.min(...values), max = Math.max(...values);
+  const span = (max - min) || 1;
+  const pts = values.map((v, i) => {
+    const x = pad + (i / (values.length - 1)) * (w - 2 * pad);
+    const y = h - pad - ((v - min) / span) * (h - 2 * pad);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const last = values[values.length - 1], first = values[0];
+  const col = last >= first ? 'var(--green)' : 'var(--red)';
+  const baseY = (h - pad - ((100 - min) / span) * (h - 2 * pad));
+  const baseLine = (100 >= min && 100 <= max)
+    ? `<line x1="0" y1="${baseY.toFixed(1)}" x2="${w}" y2="${baseY.toFixed(1)}" stroke="var(--hairline)" stroke-dasharray="2 3"/>` : '';
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${baseLine}
+    <polyline fill="none" stroke="${col}" stroke-width="1.5" points="${pts.join(' ')}"/></svg>`;
+}
+
+function deltaHtml(cur, prev){
+  if (prev == null) return '<div class="delta flat">— (1er point)</div>';
+  const d = Math.round((cur - prev) * 10) / 10;
+  if (d === 0) return '<div class="delta flat">±0.0</div>';
+  const cls = d > 0 ? 'up' : 'down';
+  const arrow = d > 0 ? '▲' : '▼';
+  return `<div class="delta ${cls}">${arrow} ${d > 0 ? '+' : ''}${d.toFixed(1)}</div>`;
+}
+
+function card(co, snaps, articles){
+  const latest = snaps[snaps.length - 1];
+  const prev = snaps.length > 1 ? snaps[snaps.length - 2] : null;
+  if (!latest){
+    return `<div class="card"><div class="card-head"><div><h2 class="co-name">${esc(co.name)}</h2>
+      <div class="co-ceo">${co.ceo_name ? 'PDG · ' + esc(co.ceo_name) : ''}</div></div></div>
+      <div class="spark-empty">Pas encore d'indice — attends le prochain run du scanner.</div></div>`;
+  }
+  const P = latest.positive_count, N = latest.negative_count, Z = latest.neutral_count;
+  const tot = Math.max(P + N + Z, 1);
+  const history = snaps.map((s) => s.index_value);
+
+  const interviews = articles.filter((a) => a.is_ceo_interview).slice(0, 3);
+  const interviewHtml = interviews.length
+    ? `<div class="interviews">${interviews.map((a) => `<div class="interview-item">
+        <a href="${esc(a.url)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">${esc(a.title)}</a>
+        <span> — ${esc(a.source || '')}${a.published_at ? ' · ' + a.published_at.slice(0,10) : ''}</span></div>`).join('')}</div>`
+    : '';
+
+  const recent = articles.slice(0, 8);
+  const headlinesHtml = recent.length
+    ? `<details><summary>${articles.length} titre(s) · voir les plus récents</summary>
+        <ul class="headlines">${recent.map((a) => `<li>
+          <span class="dot ${a.sentiment_label || 'neutral'}"></span>
+          <span><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a>
+          <span class="hl-src"> ${esc(a.source || '')}${a.published_at ? ' · ' + a.published_at.slice(0,10) : ''}</span></span>
+        </li>`).join('')}</ul></details>`
+    : '';
+
+  const idxColor = latest.index_value >= 100 ? 'var(--green)' : 'var(--red)';
+
+  return `<div class="card">
+    <div class="card-head">
+      <div>
+        <h2 class="co-name">${esc(co.name)}</h2>
+        <div class="co-ceo">${co.ceo_name ? 'PDG · ' + esc(co.ceo_name) : ''}</div>
+      </div>
+      <div class="index-box">
+        <div class="index-value" style="color:${idxColor}">${latest.index_value.toFixed(1)}</div>
+        ${deltaHtml(latest.index_value, prev ? prev.index_value : null)}
+      </div>
+    </div>
+    ${sparkline(history)}
+    <div class="senti-bar" title="${P} positifs · ${N} négatifs · ${Z} neutres">
+      <div class="p" style="width:${(P/tot*100).toFixed(1)}%"></div>
+      <div class="n" style="width:${(N/tot*100).toFixed(1)}%"></div>
+      <div class="z" style="width:${(Z/tot*100).toFixed(1)}%"></div>
+    </div>
+    <div class="metrics">
+      <span>Ratio +/− <b>${latest.ratio_pos_neg != null ? latest.ratio_pos_neg.toFixed(2) : '—'}</b></span>
+      <span><b>${P}</b>+ / <b>${N}</b>− / <b>${Z}</b>~</span>
+      ${latest.interview_count > 0 ? `<span class="badge">${latest.interview_count} interview PDG</span>` : ''}
+    </div>
+    ${interviewHtml}
+    ${headlinesHtml}
+  </div>`;
+}
+
+async function load(){
+  try {
+    const [{ data: companies, error: e1 }, { data: snaps, error: e2 }, { data: arts, error: e3 }] =
+      await Promise.all([
+        sb.from('companies').select('*').eq('active', true).order('name'),
+        sb.from('pr_index_snapshots').select('*').order('as_of_date', { ascending: true }),
+        sb.from('pr_articles').select('company_id,url,title,source,published_at,sentiment_label,is_ceo_interview')
+          .order('published_at', { ascending: false }).limit(600),
+      ]);
+    if (e1 || e2 || e3) throw (e1 || e2 || e3);
+
+    if (!companies || !companies.length){
+      $('content').innerHTML = '<div class="empty">Aucune entreprise. Ajoute des lignes dans la table <code>companies</code> (voir schema-pr.sql), puis lance le workflow « Indice RP ».</div>';
+      return;
+    }
+
+    const snapsByCo = {}, artsByCo = {};
+    (snaps || []).forEach((s) => (snapsByCo[s.company_id] ||= []).push(s));
+    (arts || []).forEach((a) => (artsByCo[a.company_id] ||= []).push(a));
+
+    const withIdx = companies.filter((c) => (snapsByCo[c.id] || []).length);
+    const avg = withIdx.length
+      ? (withIdx.reduce((s, c) => s + snapsByCo[c.id].slice(-1)[0].index_value, 0) / withIdx.length) : null;
+
+    $('stats').innerHTML =
+      `<span>Entreprises <b>${companies.length}</b></span>` +
+      (avg != null ? `<span>Indice moyen <b>${avg.toFixed(1)}</b></span>` : '') +
+      `<span><a class="reload" href="javascript:location.reload()">↻ Rafraîchir</a></span>`;
+
+    $('content').innerHTML =
+      '<div class="grid">' +
+      companies.map((c) => card(c, snapsByCo[c.id] || [], artsByCo[c.id] || [])).join('') +
+      '</div>';
+  } catch (err){
+    $('content').innerHTML = `<div class="empty">Erreur de chargement : ${esc(err.message || String(err))}<br>
+      Vérifie <code>SUPABASE_URL</code> / <code>SUPABASE_ANON_KEY</code> et que <code>schema-pr.sql</code> a été exécuté.</div>`;
+  }
+}
+load();
+</script>
+</body>
+</html>

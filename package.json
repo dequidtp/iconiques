@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Veille Reddit + enrichissement métadonnées pour la bibliothèque de photos iconiques",
   "scripts": {
-    "scan": "node reddit-scanner.mjs"
+    "scan": "node reddit-scanner.mjs",
+    "pr": "node --env-file=.env pr-scanner.mjs"
   },
   "dependencies": {
     "exifr": "^7.1.3"
