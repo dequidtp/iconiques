@@ -1,195 +1,202 @@
 // pr-scanner.mjs
-// Indice « Relations Publiques » (PR index).
+// Indice de PRÉSENCE MÉDIA des dirigeants.
 //
 // Pour chaque entreprise active (table `companies` de Supabase) :
-//   1. récolte les titres d'articles récents via Google News RSS (gratuit, sans clé) ;
-//   2. classe le sentiment de chaque titre (positif / négatif / neutre) par lexique ;
-//   3. repère les interviews / entretiens du PDG dans un média cible (tier-1) ;
-//   4. stocke les articles (table `pr_articles`, dédup par URL) ;
-//   5. recalcule UN point d'indice sur la fenêtre glissante (défaut 90 j) et
-//      l'enregistre dans `pr_index_snapshots` (un point par entreprise et par jour).
+//   1. cherche les PRISES DE PAROLE des dirigeants (PDG + membres du COMEX) —
+//      interviews, entretiens, podcasts — via Google News RSS (gratuit, sans clé) ;
+//   2. identifie l'interviewé (PDG connu, ou dirigeant détecté dans le titre) ;
+//   3. stocke chaque prise de parole (table `pr_interviews`, dédup par URL) ;
+//   4. recalcule UN score de présence média sur la fenêtre glissante (défaut 90 j)
+//      et l'enregistre dans `pr_index_snapshots` (un point par entreprise et par jour).
 //
-// L'indice est centré sur 100 (comme un indice boursier) :
-//   balance = (P - N) / (P + N + K)                 K = SMOOTHING, ∈ (-1, 1)
-//   bonus   = Σ interviews_tier1 · décroissance_temporelle   (plafonné)
-//   indice  = 100 + SENTIMENT_SPAN · balance + bonus
+// Score de présence = Σ sur les interviews de la fenêtre de :
+//      POINTS_BASE × poids_média × poids_format × récence
+//   poids_média  : média cible (tier-1) vaut plus qu'un média lambda
+//   poids_format : podcast / grand entretien valent plus qu'une brève interview
+//   récence      : une prise de parole récente pèse plus qu'une ancienne
+// → un chiffre par entreprise, qui monte quand les dirigeants s'expriment beaucoup
+//   dans de bons médias, et redescend quand ils se font discrets.
 //
 // Variables d'environnement requises (voir .github/workflows/scan-pr.yml) :
 //   SUPABASE_URL, SUPABASE_SERVICE_KEY
-//
-// Analyse de sentiment : lexique volontairement simple et déterministe (aucune
-// API payante, dans l'esprit du reste du projet). C'est un signal AGRÉGÉ, pas
-// une vérité titre par titre. La fonction `scoreSentiment` est isolée et
-// exportée : on peut la remplacer par un appel LLM plus tard sans toucher au reste.
 
 const { SUPABASE_URL, SUPABASE_SERVICE_KEY } = process.env;
 
 // ---------------------------------------------------------------------------
 // CONFIG
 // ---------------------------------------------------------------------------
-const WINDOW_DAYS = 90;        // fenêtre glissante d'analyse de l'indice
-const SMOOTHING = 5;           // K : lissage de la balance (anti petits échantillons)
-const SENTIMENT_SPAN = 40;     // amplitude max du sentiment sur l'indice (± points)
-const INTERVIEW_POINTS = 6;    // points par interview PDG tier-1 (récente, avant plafond)
-const INTERVIEW_BONUS_CAP = 18;// plafond total du bonus interviews (points)
-const REQUEST_DELAY_MS = 1200; // courtoisie entre requêtes Google News
-const NEUTRAL_BAND = 1.0;      // |score| < NEUTRAL_BAND ⇒ neutre
+const WINDOW_DAYS = 90;
+const POINTS_BASE = 10;         // points de base d'une prise de parole
+const TIER1_WEIGHT = 1.5;       // média cible (Investir, Les Échos, FT...)
+const OTHER_WEIGHT = 1.0;       // autre média
+const PODCAST_WEIGHT = 1.4;     // format podcast
+const LONGFORM_WEIGHT = 1.3;    // "grand entretien"
+const STD_WEIGHT = 1.0;         // interview / entretien standard
+const RECENCY_FLOOR = 0.25;     // une vieille interview compte encore un peu
+const REQUEST_DELAY_MS = 1200;
 
-// Médias « tier-1 » : presse financière / de référence visée par la veille.
-// Une interview du PDG dans l'un d'eux est le signal fort demandé.
-// La comparaison se fait en minuscules, sans accents, par inclusion.
+// Médias « tier-1 » (presse cible). Comparaison en minuscules, sans accents.
 const TIER1_SOURCES = [
-  'investir',
-  'les echos',      // couvre "Les Échos"
-  'financial times',
-  'le monde',
-  'bloomberg',
-  'reuters',
-  'challenges',
-  'la tribune',
-  'le figaro',      // le flux RSS ne distingue pas la rubrique → couvre "Le Figaro" (dont Économie)
+  'investir', 'les echos', 'financial times', 'le monde',
+  'bloomberg', 'reuters', 'challenges', 'la tribune', 'le figaro',
 ];
 
-// Marqueurs d'interview / entretien dans un titre (FR + EN).
+// Marqueurs de prise de parole d'un dirigeant dans un titre (FR + EN).
 const INTERVIEW_MARKERS = [
-  'interview', 'entretien', 'grand entretien', 'confidences', 'confessions',
-  'itw', 'face-a-face', 'tribune', 'notre entretien',
+  'interview', 'entretien', 'grand entretien', 'podcast', 'confidences',
+  'au micro', 'invite de', 'invitee de', 're.oit ', 'a coeur ouvert',
+  '3 questions', 'trois questions', 'face a face', 'itw',
 ];
 
-// Lexique de sentiment (racines, comparaison sur titre normalisé sans accents).
-// weight > 0 = bonne presse, weight < 0 = mauvaise presse.
-const LEXICON = [
-  // --- Positif (FR) ---
-  ['record', 2], ['recharge', 0], ['hausse', 2], ['bondit', 2], ['bond ', 1.5],
-  ['croissance', 1.5], ['benefice', 2], ['benefices', 2], ['profit', 2],
-  ['profits', 2], ['succes', 2], ['reussite', 2], ['rebond', 2], ['rebondit', 2],
-  ['dividende', 1.5], ['contrat', 1.5], ['partenariat', 1.5], ['innovation', 1],
-  ['lance', 0.8], ['leader', 1], ['surperforme', 2], ['optimiste', 1.5],
-  ['dynamique', 1], ['expansion', 1.5], ['acquisition', 0.8], ['prime', 0.5],
-  ['releve ', 1.5], ['releve', 1], ['augmente', 1], ['gagne', 1.5], ['gains', 1.5],
-  ['salue', 1], ['plebiscite', 2], ['recompense', 1.5], ['prix ', 0.5],
-  ['triomphe', 2], ['envole', 2], ['envolee', 2], ['prometteur', 1.5],
-  ['solide', 1.2], ['robuste', 1.2], ['fort ', 0.8], ['meilleur', 1.2],
-  ['investit', 0.8], ['investissement', 0.8], ['emplois', 0.8], ['embauche', 1],
-  ['feu vert', 1.5], ['approuve', 1], ['soutien', 1],
-  // --- Positif (EN) ---
-  ['surge', 2], ['soar', 2], ['beat', 1.5], ['beats', 1.5], ['rally', 1.5],
-  ['growth', 1.5], ['profit ', 2], ['upgrade', 2], ['boost', 1.5], ['win', 1.2],
-  ['wins', 1.5], ['strong', 1.2], ['jump', 1.5], ['gain', 1.2], ['outperform', 2],
-  ['deal', 0.8], ['expands', 1], ['optimistic', 1.5], ['breakthrough', 1.8],
-
-  // --- Négatif (FR) ---
-  ['chute', -2], ['plonge', -2.5], ['plongeon', -2.5], ['effondre', -2.5],
-  ['effondrement', -2.5], ['baisse', -1.5], ['recul', -1.5], ['recule', -1.5],
-  ['perte', -2], ['pertes', -2], ['deficit', -2], ['licencie', -2],
-  ['licenciement', -2], ['licenciements', -2], ['suppression', -1.8],
-  ['plan social', -2.5], ['scandale', -3], ['fraude', -3], ['enquete', -2],
-  ['perquisition', -2.5], ['plainte', -2], ['proces', -2], ['condamne', -2.5],
-  ['condamnation', -2.5], ['amende', -2], ['sanction', -2], ['sanctionne', -2],
-  ['avertissement', -2], ['profit warning', -3], ['warning', -2], ['rappel', -1.5],
-  ['greve', -2], ['crise', -2], ['faillite', -3], ['dette', -1], ['dettes', -1.2],
-  ['polemique', -2], ['boycott', -2.5], ['accuse', -2], ['accusation', -2],
-  ['soupcon', -1.8], ['soupcons', -1.8], ['degrade', -2], ['degradation', -2],
-  ['abaisse', -1.5], ['inquiet', -1.5], ['inquietude', -1.5], ['menace', -1.5],
-  ['echec', -2], ['ferme ', -1.5], ['fermeture', -1.8], ['pollution', -1.8],
-  ['pollue', -1.8], ['toxique', -2], ['demission', -1.5], ['demissionne', -1.5],
-  ['limoge', -2.5], ['evince', -2.5], ['chute libre', -3], ['risque', -1],
-  ['penurie', -1.5], ['coupe', -1], ['coupes', -1.2], ['ralentit', -1.5],
-  ['ralentissement', -1.5], ['deroute', -2.5], ['deboire', -2], ['deboires', -2],
-  // --- Négatif (EN) ---
-  ['plunge', -2.5], ['slump', -2], ['drop', -1.5], ['fall', -1.5], ['loss', -2],
-  ['losses', -2], ['lawsuit', -2], ['probe', -2], ['fraud', -3], ['layoff', -2],
-  ['layoffs', -2], ['downgrade', -2], ['fine ', -1.5], ['strike', -1.8],
-  ['recall', -1.8], ['scandal', -3], ['crash', -2.5], ['slash', -1.8],
-  ['sink', -2], ['tumble', -2], ['weak', -1.2], ['cuts', -1.2], ['warns', -2],
-  ['bankrupt', -3], ['crisis', -2], ['sued', -2], ['halts', -1.5],
+// Fonctions / rôles de dirigeant repérés dans le titre → étiquette normalisée.
+const ROLE_MAP = [
+  [/directrice general|directeur general|\bdg\b|directeur[- ]?general/i, 'Directeur général'],
+  [/pdg|p-dg|president[e]? directeur|president[e]? du directoire/i, 'PDG'],
+  [/directeur financier|directrice financiere|\bcfo\b|daf\b/i, 'Directeur financier'],
+  [/president[e]?\b/i, 'Président'],
+  [/cofondat(eur|rice)|co-fondat(eur|rice)|fondat(eur|rice)/i, 'Fondateur'],
+  [/patron|patronne|dirigeant[e]?|numero un|boss|ceo\b/i, 'Dirigeant'],
 ];
 
-// Négations : si présentes juste avant un terme, on inverse (atténué) son signe.
-const NEGATIONS = ['pas', 'plus', 'aucun', 'aucune', 'sans', 'ni ', 'no ', 'not ', 'never', 'jamais'];
+// Nom de personne : 2 à 3 mots capitalisés (accents autorisés). Casse STRICTE
+// (pas de flag `i`, sinon la classe majuscule matcherait aussi les minuscules).
+const PERSON_RE = /([A-ZÀ-Ý][\p{L}.'’\-]+(?:[ \t]+[A-ZÀ-Ý][\p{L}.'’\-]+){1,2})/gu;
+const ROLE_WORDS = /(pdg|p-dg|president|directeur|directrice|patron|patronne|\bdg\b|\bceo\b|fondat|numero un|dirigeant)/;
+const CONNECTOR = /(avec|interview|entretien|podcast|confidences|rencontre|recoit)/;
+
+// Extrait le nom d'un dirigeant interviewé : un nom propre validé par un
+// connecteur d'interview juste avant, ou une fonction (rôle) juste avant/après.
+function extractInterviewee(text, company) {
+  if (!text) return null;
+  PERSON_RE.lastIndex = 0;
+  let m;
+  while ((m = PERSON_RE.exec(text))) {
+    const name = cleanName(m[1]);
+    if (!name || companyMentioned(name, company)) continue; // pas le nom de la boîte
+    const start = m.index, end = start + m[0].length;
+    const before = normalize(text.slice(Math.max(0, start - 26), start));
+    const after = normalize(text.slice(end, end + 34));
+    if (CONNECTOR.test(before) || ROLE_WORDS.test(after) || ROLE_WORDS.test(before)) return name;
+  }
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // Utilitaires
 // ---------------------------------------------------------------------------
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// minuscule + suppression des accents (pour matcher le lexique de façon robuste).
 function normalize(s) {
-  return (s || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[’']/g, "'");
+  return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[’']/g, "'");
 }
 
 function decodeEntities(s) {
   if (!s) return '';
   return s
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;/g, "'")
-    .replace(/&#x27;/gi, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/<[^>]+>/g, ' ')       // retire d'éventuelles balises HTML résiduelles
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'").replace(/&#x27;/gi, "'").replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+    .replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function toISO(d) {
+  if (!d) return null;
+  const date = d instanceof Date ? d : new Date(d);
+  return isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function cleanName(s) {
+  if (!s) return null;
+  const t = s.trim().replace(/[\s,.;:]+$/, '');
+  if (t.length < 4 || !t.includes(' ')) return null; // exige un prénom + nom
+  return t;
 }
 
 // ---------------------------------------------------------------------------
-// SENTIMENT — score signé d'un titre. Isolé et exporté (remplaçable par un LLM).
-// ---------------------------------------------------------------------------
-function scoreSentiment(title) {
-  const text = ' ' + normalize(title) + ' ';
-  let score = 0;
-  const matched = [];
-
-  for (const [term, weight] of LEXICON) {
-    if (weight === 0) continue;
-    let idx = text.indexOf(term);
-    if (idx === -1) continue;
-
-    // Vérifie une négation dans les ~18 caractères qui précèdent le terme.
-    const before = text.slice(Math.max(0, idx - 18), idx);
-    const negated = NEGATIONS.some((n) => before.includes(' ' + n));
-    const applied = negated ? -weight * 0.6 : weight;
-
-    score += applied;
-    matched.push({ term: term.trim(), weight: applied, negated });
-  }
-
-  let label = 'neutral';
-  if (score >= NEUTRAL_BAND) label = 'positive';
-  else if (score <= -NEUTRAL_BAND) label = 'negative';
-
-  return { score: Math.round(score * 100) / 100, label, matched };
-}
-
-// ---------------------------------------------------------------------------
-// SOURCES / INTERVIEWS
+// SOURCES / FORMAT / RÔLE
 // ---------------------------------------------------------------------------
 function sourceTier(source) {
   const s = normalize(source);
   return TIER1_SOURCES.some((t) => s.includes(t)) ? 1 : 2;
 }
 
-// Une interview du PDG = média tier-1 + (nom du PDG dans le titre OU requête
-// ciblée interview) + marqueur d'entretien. On renvoie les indices trouvés.
-function detectCeoInterview(title, source, ceoNames) {
-  const t = normalize(title);
-  const tier = sourceTier(source);
-  const marker = INTERVIEW_MARKERS.find((m) => t.includes(normalize(m))) || null;
-  const ceoHit = (ceoNames || []).find((n) => n && t.includes(normalize(n))) || null;
+function detectFormat(text) {
+  const t = normalize(text);
+  if (t.includes('podcast') || t.includes('au micro')) return 'podcast';
+  if (t.includes('grand entretien')) return 'grand entretien';
+  if (t.includes('entretien')) return 'entretien';
+  return 'interview';
+}
 
-  const isInterview = tier === 1 && Boolean(marker) && Boolean(ceoHit);
+function formatWeight(format) {
+  if (format === 'podcast') return PODCAST_WEIGHT;
+  if (format === 'grand entretien') return LONGFORM_WEIGHT;
+  return STD_WEIGHT;
+}
+
+function detectRole(text) {
+  for (const [re, label] of ROLE_MAP) if (re.test(text)) return label;
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// DÉTECTION D'UNE PRISE DE PAROLE DE DIRIGEANT
+// ---------------------------------------------------------------------------
+function companyMentioned(text, company) {
+  const t = normalize(text);
+  const names = [company.name, ...(Array.isArray(company.aliases) ? company.aliases : [])];
+  return names.some((n) => n && t.includes(normalize(n)));
+}
+
+function ceoNamesOf(company) {
+  const names = [];
+  if (company.ceo_name) names.push(company.ceo_name);
+  if (Array.isArray(company.ceo_aliases)) names.push(...company.ceo_aliases);
+  return names;
+}
+
+// Renvoie un objet interview {…} si le titre est une prise de parole d'un
+// dirigeant DE CETTE entreprise, sinon null.
+function detectInterview(item, company) {
+  const title = item.title || '';
+  const blob = `${title} ${item.description || ''}`;
+  const nt = normalize(title);
+
+  // 1) marqueur d'interview / podcast dans le TITRE
+  const hasMarker = INTERVIEW_MARKERS.some((m) => nt.includes(normalize(m)));
+  if (!hasMarker) return null;
+
+  const tier = sourceTier(item.source);
+  const format = detectFormat(blob);
+  const ceoNames = ceoNamesOf(company);
+
+  // 2) identifier l'interviewé
+  const ceoHit = ceoNames.find((n) => n && nt.includes(normalize(n)));
+  let interviewee = null, role = null, isCeo = false;
+
+  if (ceoHit) {
+    interviewee = company.ceo_name;
+    role = 'PDG';
+    isCeo = true;
+  } else {
+    // dirigeant non-PDG : exiger que l'entreprise soit citée + extraire un nom
+    if (!companyMentioned(blob, company)) return null;
+    interviewee = extractInterviewee(title, company) || extractInterviewee(item.description || '', company);
+    if (!interviewee) return null;      // pas de dirigeant identifiable → on ignore
+    role = detectRole(blob) || 'Dirigeant';
+  }
+
+  const tierW = tier === 1 ? TIER1_WEIGHT : OTHER_WEIGHT;
+  const weight = Math.round(POINTS_BASE * tierW * formatWeight(format) * 10) / 10;
+
   return {
-    is_ceo_interview: isInterview,
-    signals: isInterview ? { tier, marker, ceo: ceoHit } : { tier, marker, ceo: ceoHit },
+    interviewee_name: interviewee,
+    interviewee_role: role,
+    is_ceo: isCeo,
+    format,
+    source_tier: tier,
+    weight,               // part statique du score (récence appliquée au calcul de l'indice)
   };
 }
 
@@ -201,11 +208,9 @@ function newsRssUrl(query) {
   return `https://news.google.com/rss/search?q=${q}&hl=fr&gl=FR&ceid=FR:fr`;
 }
 
-// Parse le RSS Google News (format régulier) sans dépendance XML.
 function parseRss(xml) {
   const items = [];
-  const blocks = xml.split(/<item>/).slice(1);
-  for (const block of blocks) {
+  for (const block of xml.split(/<item>/).slice(1)) {
     const chunk = block.split('</item>')[0];
     const pick = (tag) => {
       const m = chunk.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, 'i'));
@@ -214,39 +219,31 @@ function parseRss(xml) {
     let title = pick('title');
     const link = pick('link');
     const pubDate = pick('pubDate');
-    // <source url="...">Nom du média</source>
-    const sourceMatch = chunk.match(/<source[^>]*>([\s\S]*?)<\/source>/i);
-    let source = sourceMatch ? decodeEntities(sourceMatch[1]) : '';
+    const description = pick('description');
+    const sm = chunk.match(/<source[^>]*>([\s\S]*?)<\/source>/i);
+    let source = sm ? decodeEntities(sm[1]) : '';
 
-    // Google News suffixe souvent le titre par " - Nom du média" : on nettoie
-    // et, si <source> est absent, on récupère le média depuis ce suffixe.
-    const dashSplit = title.match(/^(.*)\s[-–]\s([^-–]+)$/);
-    if (dashSplit) {
-      if (!source) source = dashSplit[2].trim();
-      if (source && normalize(dashSplit[2]).includes(normalize(source).slice(0, 8))) {
-        title = dashSplit[1].trim();
-      }
+    const dash = title.match(/^(.*)\s[-–]\s([^-–]+)$/);
+    if (dash) {
+      if (!source) source = dash[2].trim();
+      if (source && normalize(dash[2]).includes(normalize(source).slice(0, 8))) title = dash[1].trim();
     }
-
     if (!title || !link) continue;
-    items.push({ title, link, pubDate, source });
+    items.push({ title, link, pubDate, source, description });
   }
   return items;
 }
 
 async function fetchNews(query) {
   const res = await fetch(newsRssUrl(query), {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; iconiques-pr-index/1.0)' },
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; iconiques-pr-index/2.0)' },
   });
-  if (!res.ok) {
-    console.error(`  Échec Google News (${res.status}) pour « ${query} »`);
-    return [];
-  }
+  if (!res.ok) { console.error(`  Google News ${res.status} pour « ${query} »`); return []; }
   return parseRss(await res.text());
 }
 
 // ---------------------------------------------------------------------------
-// SUPABASE (REST, comme reddit-scanner.mjs — aucune lib cliente)
+// SUPABASE (REST)
 // ---------------------------------------------------------------------------
 async function sb(path, { method = 'GET', body, prefer } = {}) {
   const headers = {
@@ -256,13 +253,9 @@ async function sb(path, { method = 'GET', body, prefer } = {}) {
   };
   if (prefer) headers.Prefer = prefer;
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
+    method, headers, body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok && res.status !== 409) {
-    throw new Error(`Supabase ${method} ${path} → ${res.status} ${await res.text()}`);
-  }
+  if (!res.ok && res.status !== 409) throw new Error(`Supabase ${method} ${path} → ${res.status} ${await res.text()}`);
   const text = await res.text();
   return text ? JSON.parse(text) : null;
 }
@@ -271,71 +264,55 @@ async function fetchActiveCompanies() {
   return (await sb('companies?active=eq.true&select=*')) || [];
 }
 
-// Insère les articles (ignore les doublons via la contrainte unique company_id+url).
-async function insertArticles(rows) {
-  if (!rows.length) return 0;
-  await sb('pr_articles', {
-    method: 'POST',
-    body: rows,
+async function insertInterviews(rows) {
+  if (!rows.length) return;
+  await sb('pr_interviews', {
+    method: 'POST', body: rows,
     prefer: 'resolution=ignore-duplicates,return=minimal',
   });
-  return rows.length;
 }
 
-// Récupère tous les articles d'une entreprise dans la fenêtre glissante.
-async function fetchWindowArticles(companyId) {
+async function fetchWindowInterviews(companyId) {
   const since = new Date(Date.now() - WINDOW_DAYS * 86400000).toISOString();
-  const path =
-    `pr_articles?company_id=eq.${companyId}` +
+  const path = `pr_interviews?company_id=eq.${companyId}` +
     `&published_at=gte.${since}` +
-    `&select=sentiment_label,is_ceo_interview,source_tier,published_at`;
+    `&select=interviewee_name,interviewee_role,is_ceo,format,source_tier,weight,published_at`;
   return (await sb(path)) || [];
 }
 
 // ---------------------------------------------------------------------------
-// CALCUL DE L'INDICE
+// CALCUL DE L'INDICE DE PRÉSENCE
 // ---------------------------------------------------------------------------
-function computeIndex(articles, now = Date.now()) {
-  let P = 0, N = 0, Z = 0;
-  let interviewBonus = 0;
-  let interviewCount = 0;
+function recency(ageDays) {
+  return Math.max(RECENCY_FLOOR, 1 - ageDays / WINDOW_DAYS);
+}
 
-  for (const a of articles) {
-    if (a.sentiment_label === 'positive') P++;
-    else if (a.sentiment_label === 'negative') N++;
-    else Z++;
+function computeIndex(interviews, now = Date.now()) {
+  let score = 0, tier1 = 0, podcast = 0;
+  const people = new Map();
 
-    if (a.is_ceo_interview && a.source_tier === 1) {
-      interviewCount++;
-      const ageDays = a.published_at
-        ? Math.max(0, (now - new Date(a.published_at).getTime()) / 86400000)
-        : WINDOW_DAYS;
-      const decay = Math.max(0, 1 - ageDays / WINDOW_DAYS); // récent = poids fort
-      interviewBonus += INTERVIEW_POINTS * decay;
+  for (const iv of interviews) {
+    const age = iv.published_at ? Math.max(0, (now - new Date(iv.published_at).getTime()) / 86400000) : WINDOW_DAYS;
+    score += (iv.weight || POINTS_BASE) * recency(age);
+    if (iv.source_tier === 1) tier1++;
+    if (iv.format === 'podcast') podcast++;
+    if (iv.interviewee_name) {
+      const key = iv.interviewee_name;
+      const p = people.get(key) || { name: key, role: iv.interviewee_role, count: 0 };
+      p.count++; people.set(key, p);
     }
   }
 
-  interviewBonus = Math.min(interviewBonus, INTERVIEW_BONUS_CAP);
-  const balance = (P - N) / (P + N + SMOOTHING);
-  const ratio = N > 0 ? P / N : P; // ratio positif/négatif demandé
-  const indexValue = 100 + SENTIMENT_SPAN * balance + interviewBonus;
+  const topPeople = [...people.values()].sort((a, b) => b.count - a.count).slice(0, 5);
 
   return {
-    index_value: Math.round(indexValue * 10) / 10,
-    sentiment_balance: Math.round(balance * 1000) / 1000,
-    ratio_pos_neg: Math.round(ratio * 100) / 100,
-    positive_count: P,
-    negative_count: N,
-    neutral_count: Z,
-    article_count: P + N + Z,
-    interview_count: interviewCount,
-    interview_bonus: Math.round(interviewBonus * 10) / 10,
-    components: {
-      formula: '100 + 40*balance + bonus',
-      smoothing: SMOOTHING,
-      sentiment_span: SENTIMENT_SPAN,
-      window_days: WINDOW_DAYS,
-    },
+    index_value: Math.round(score * 10) / 10,
+    interview_count: interviews.length,
+    tier1_count: tier1,
+    podcast_count: podcast,
+    people_count: people.size,
+    top_people: topPeople,
+    components: { formula: 'Σ base×média×format×récence', base: POINTS_BASE, window_days: WINDOW_DAYS },
   };
 }
 
@@ -346,10 +323,8 @@ async function upsertSnapshot(companyId, metrics) {
     window_days: WINDOW_DAYS,
     ...metrics,
   };
-  // merge-duplicates + unique(company_id, as_of_date) ⇒ re-run du jour = update.
   await sb('pr_index_snapshots?on_conflict=company_id,as_of_date', {
-    method: 'POST',
-    body: row,
+    method: 'POST', body: row,
     prefer: 'resolution=merge-duplicates,return=minimal',
   });
 }
@@ -357,66 +332,46 @@ async function upsertSnapshot(companyId, metrics) {
 // ---------------------------------------------------------------------------
 // TRAITEMENT D'UNE ENTREPRISE
 // ---------------------------------------------------------------------------
-function ceoNamesOf(company) {
-  const names = [];
-  if (company.ceo_name) names.push(company.ceo_name);
-  if (Array.isArray(company.ceo_aliases)) names.push(...company.ceo_aliases);
-  return names;
-}
-
 async function processCompany(company) {
-  const ceoNames = ceoNamesOf(company);
-  const baseQuery = company.news_query || company.name;
-
-  // Deux requêtes : la veille générale, + une requête ciblée interviews du PDG.
-  const queries = [baseQuery];
-  if (company.ceo_name) {
-    queries.push(`"${company.ceo_name}" (interview OR entretien)`);
-  }
+  const baseName = company.news_query || company.name;
+  const queries = [];
+  if (company.ceo_name) queries.push(`"${company.ceo_name}" (interview OR entretien OR podcast)`);
+  queries.push(`"${baseName}" (PDG OR "directeur général" OR dirigeant OR patron) (interview OR entretien OR podcast)`);
 
   const seen = new Set();
   const rows = [];
 
   for (const q of queries) {
-    const items = await fetchNews(q);
-    for (const it of items) {
+    for (const it of await fetchNews(q)) {
       if (seen.has(it.link)) continue;
       seen.add(it.link);
 
-      const sentiment = scoreSentiment(it.title);
-      const interview = detectCeoInterview(it.title, it.source, ceoNames);
-      const tier = sourceTier(it.source);
-      const published = it.pubDate ? new Date(it.pubDate) : null;
+      const det = detectInterview(it, company);
+      if (!det) continue;
 
+      const published = it.pubDate ? new Date(it.pubDate) : null;
       rows.push({
         company_id: company.id,
         url: it.link,
         title: it.title,
         source: it.source || null,
-        source_tier: tier,
         published_at: published && !isNaN(published) ? published.toISOString() : null,
-        sentiment_score: sentiment.score,
-        sentiment_label: sentiment.label,
-        matched_terms: sentiment.matched,
-        is_ceo_interview: interview.is_ceo_interview,
-        interview_signals: interview.signals,
+        ...det,
         raw: { source: it.source, pubDate: it.pubDate },
       });
     }
     await sleep(REQUEST_DELAY_MS);
   }
 
-  await insertArticles(rows);
+  await insertInterviews(rows);
 
-  // Recalcule l'indice sur toute la fenêtre (anciens + nouveaux articles en DB).
-  const windowArticles = await fetchWindowArticles(company.id);
-  const metrics = computeIndex(windowArticles);
+  const windowIvs = await fetchWindowInterviews(company.id);
+  const metrics = computeIndex(windowIvs);
   await upsertSnapshot(company.id, metrics);
 
   console.log(
-    `  ${company.name}: ${rows.length} titre(s) captés, indice ${metrics.index_value} ` +
-    `(P${metrics.positive_count}/N${metrics.negative_count}/Z${metrics.neutral_count}, ` +
-    `${metrics.interview_count} interview(s) PDG).`
+    `  ${company.name}: ${rows.length} prise(s) de parole captée(s), présence ${metrics.index_value} ` +
+    `(${metrics.interview_count} sur 90j, ${metrics.tier1_count} tier-1, ${metrics.podcast_count} podcast, ${metrics.people_count} dirigeant·es).`
   );
   return metrics;
 }
@@ -426,36 +381,24 @@ async function processCompany(company) {
 // ---------------------------------------------------------------------------
 async function main() {
   const missing = ['SUPABASE_URL', 'SUPABASE_SERVICE_KEY'].filter((k) => !process.env[k]);
-  if (missing.length) {
-    throw new Error(`Variables d'environnement manquantes: ${missing.join(', ')}`);
-  }
+  if (missing.length) throw new Error(`Variables d'environnement manquantes: ${missing.join(', ')}`);
 
   const companies = await fetchActiveCompanies();
   if (!companies.length) {
-    console.log('Aucune entreprise active. Ajoute des lignes dans la table `companies` (voir schema-pr.sql).');
+    console.log('Aucune entreprise active. Ajoute des lignes dans `companies` (voir schema-pr.sql / seed-cac40.sql).');
     return;
   }
 
-  console.log(`Calcul de l'indice RP pour ${companies.length} entreprise(s)...`);
+  console.log(`Indice de présence média pour ${companies.length} entreprise(s)...`);
   for (const company of companies) {
-    try {
-      await processCompany(company);
-    } catch (err) {
-      console.error(`  ${company.name}: échec — ${err.message}`);
-    }
+    try { await processCompany(company); }
+    catch (err) { console.error(`  ${company.name}: échec — ${err.message}`); }
     await sleep(REQUEST_DELAY_MS);
   }
   console.log('Terminé.');
 }
 
-const isEntrypoint = process.argv[1] &&
-  import.meta.url === new URL(`file://${process.argv[1]}`).href;
+const isEntrypoint = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href;
+if (isEntrypoint) main().catch((err) => { console.error(err); process.exit(1); });
 
-if (isEntrypoint) {
-  main().catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
-}
-
-export { scoreSentiment, detectCeoInterview, sourceTier, computeIndex, parseRss, normalize };
+export { detectInterview, sourceTier, detectFormat, detectRole, computeIndex, parseRss, normalize };

@@ -130,3 +130,47 @@ create policy "pr public read snapshots" on pr_index_snapshots for select using 
 --   ('LVMH', 'lvmh', 'Bernard Arnault', '["Arnault"]', 'MC.PA', 'LVMH', '["Louis Vuitton"]'),
 --   ('Airbus', 'airbus', 'Guillaume Faury', '["Faury"]', 'AIR.PA', 'Airbus', null)
 -- on conflict (slug) do nothing;
+
+-- ===========================================================================
+-- v2 — INDICE DE PRÉSENCE MÉDIA DES DIRIGEANTS
+-- On ne suit plus le sentiment de tous les articles, mais uniquement les PRISES
+-- DE PAROLE des dirigeants (PDG + COMEX) : interviews, entretiens, podcasts.
+-- (La table `pr_articles` ci-dessus n'est plus alimentée — conservée sans risque.)
+-- Ré-exécutable : create/alter en "if not exists".
+-- ===========================================================================
+
+-- Chaque prise de parole d'un dirigeant (une ligne = une interview/podcast).
+create table if not exists pr_interviews (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references companies(id) on delete cascade,
+  url text not null,                      -- lien (clé de dédup)
+  title text not null,
+  source text,                            -- média (ex: "Les Échos")
+  source_tier smallint,                   -- 1 = média cible, 2 = autre
+  published_at timestamptz,
+  captured_at timestamptz not null default now(),
+
+  interviewee_name text,                  -- dirigeant identifié (PDG connu ou détecté)
+  interviewee_role text,                  -- PDG / Directeur général / Dirigeant...
+  is_ceo boolean not null default false,
+  format text,                            -- podcast | grand entretien | entretien | interview
+  weight real,                            -- part statique du score (média × format × base)
+
+  raw jsonb,
+  unique (company_id, url)
+);
+
+-- Colonnes de présence sur les snapshots (index_value = score de présence média).
+alter table pr_index_snapshots add column if not exists interview_count int not null default 0;
+alter table pr_index_snapshots add column if not exists tier1_count int not null default 0;
+alter table pr_index_snapshots add column if not exists podcast_count int not null default 0;
+alter table pr_index_snapshots add column if not exists people_count int not null default 0;
+alter table pr_index_snapshots add column if not exists top_people jsonb;
+
+create index if not exists pr_interviews_company_idx on pr_interviews (company_id);
+create index if not exists pr_interviews_published_idx on pr_interviews (published_at desc);
+create index if not exists pr_interviews_person_idx on pr_interviews (company_id, interviewee_name);
+
+alter table pr_interviews enable row level security;
+drop policy if exists "pr public read interviews" on pr_interviews;
+create policy "pr public read interviews" on pr_interviews for select using (true);

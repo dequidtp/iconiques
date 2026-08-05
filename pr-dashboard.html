@@ -3,24 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Indice RP — CAC 40</title>
+<title>Indice de présence média — CAC 40</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     color-scheme: light;
-    --plane:#eef0f4;        /* fond de page */
-    --surface:#ffffff;      /* cartes / surface graphique */
-    --ink:#12141c;          /* texte principal */
-    --ink-2:#5b6472;        /* texte secondaire */
-    --muted:#8b93a1;        /* axes / labels */
-    --grid:#e9ecf1;         /* lignes de grille */
-    --baseline:#c7ccd6;     /* axe / ligne 100 */
-    --border:rgba(18,20,28,0.10);
-    --brand:#e6007e;        /* rose Boursorama — indice moyen */
-    --up:#0a8f4d;           /* hausse */
-    --down:#e3001b;         /* baisse */
-    --neutral:#9aa2b1;      /* neutre */
-    --context:#ced3dc;      /* fines lignes des autres entreprises */
+    --plane:#eef0f4; --surface:#ffffff; --ink:#12141c; --ink-2:#5b6472;
+    --muted:#8b93a1; --grid:#e9ecf1; --baseline:#c7ccd6; --border:rgba(18,20,28,0.10);
+    --brand:#e6007e; --up:#0a8f4d; --down:#e3001b; --neutral:#9aa2b1; --context:#ced3dc;
     --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
   *{box-sizing:border-box;}
@@ -28,14 +18,12 @@
   a{color:inherit;}
   .wrap{max-width:1180px;margin:0 auto;padding:0 20px 80px;}
 
-  /* Barre de titre */
   header{background:var(--ink);color:#fff;}
   .headbar{max-width:1180px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;gap:12px;}
   .logo-dot{width:12px;height:12px;border-radius:50%;background:var(--brand);flex-shrink:0;}
   .headbar h1{font-size:16px;font-weight:700;margin:0;letter-spacing:.3px;}
   .headbar .tag{font-size:11px;color:#b9beca;text-transform:uppercase;letter-spacing:1.5px;}
 
-  /* Bloc héros : indice moyen */
   .hero{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-top:20px;padding:22px 24px;display:flex;flex-wrap:wrap;align-items:flex-end;gap:26px;}
   .hero .label{font-size:12px;color:var(--ink-2);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;}
   .hero .big{font-size:46px;font-weight:800;line-height:1;letter-spacing:-1px;}
@@ -47,7 +35,6 @@
   .hero .ministat .k{font-size:11px;color:var(--ink-2);text-transform:uppercase;letter-spacing:.5px;}
   .up{color:var(--up);} .down{color:var(--down);} .flat{color:var(--muted);}
 
-  /* Contrôles */
   .controls{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between;margin:18px 0 10px;}
   .periods{display:inline-flex;background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
   .periods button{font-family:var(--font);border:none;background:none;padding:8px 14px;font-size:13px;font-weight:600;color:var(--ink-2);cursor:pointer;border-right:1px solid var(--border);}
@@ -57,7 +44,6 @@
   .filterbox b{color:var(--ink);}
   .clearlink{color:var(--brand);cursor:pointer;font-weight:600;margin-left:8px;}
 
-  /* Graphique */
   .chartcard{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 12px 8px;position:relative;}
   svg.chart{width:100%;height:auto;display:block;overflow:visible;}
   .chart-note{font-size:12px;color:var(--muted);text-align:center;padding:40px 0;}
@@ -66,7 +52,6 @@
   .tooltip .tt-row{display:flex;justify-content:space-between;gap:14px;}
   .tooltip .tt-row .sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;}
 
-  /* Légende / filtre entreprises */
   .legend{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px;max-height:132px;overflow-y:auto;padding:2px;}
   .chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);background:var(--surface);border-radius:20px;padding:5px 11px 5px 8px;font-size:12px;cursor:pointer;color:var(--ink-2);user-select:none;}
   .chip .sw{width:10px;height:10px;border-radius:50%;background:var(--context);flex-shrink:0;}
@@ -74,7 +59,6 @@
   .chip .v{color:var(--muted);font-variant-numeric:tabular-nums;}
   .legend-hint{font-size:11px;color:var(--muted);margin:2px 2px 0;}
 
-  /* Section classement */
   h2.sec{font-size:15px;margin:34px 0 4px;letter-spacing:.2px;}
   .sec-sub{font-size:12px;color:var(--ink-2);margin:0 0 16px;}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;}
@@ -85,30 +69,31 @@
   .co-ceo{font-size:11px;color:var(--muted);margin-top:2px;}
   .idx{text-align:right;flex-shrink:0;}
   .idx .val{font-size:28px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;}
+  .idx .u{font-size:12px;color:var(--muted);font-weight:600;}
   .idx .d{font-size:12px;font-weight:700;margin-top:3px;}
-  .senti-bar{display:flex;height:7px;border-radius:4px;overflow:hidden;background:var(--grid);margin:14px 0 8px;}
-  .senti-bar .p{background:var(--up);} .senti-bar .n{background:var(--down);} .senti-bar .z{background:var(--neutral);}
-  .metaline{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-2);flex-wrap:wrap;gap:6px;}
-  .metaline b{color:var(--ink);font-variant-numeric:tabular-nums;}
-  .badge{display:inline-block;font-size:10px;letter-spacing:.4px;text-transform:uppercase;padding:2px 8px;border-radius:20px;background:#fce4f1;color:var(--brand);font-weight:700;}
+  .statline{display:flex;gap:16px;flex-wrap:wrap;margin:14px 0 4px;font-size:11px;color:var(--ink-2);}
+  .statline .n{font-size:17px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1;}
+  .statline .k{text-transform:uppercase;letter-spacing:.4px;color:var(--muted);}
+  .people{font-size:11px;color:var(--ink-2);margin-top:6px;}
+  .people b{color:var(--ink);}
 
-  /* Explication du calcul */
-  .calc{background:var(--plane);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin:14px 0 4px;font-size:12px;line-height:1.7;}
-  .calc .row{display:flex;justify-content:space-between;gap:10px;}
-  .calc .row.total{border-top:1px solid var(--border);margin-top:6px;padding-top:6px;font-weight:700;}
-  .calc code{font-variant-numeric:tabular-nums;}
-  .calc .muted{color:var(--muted);}
+  .calc{background:var(--plane);border:1px solid var(--border);border-radius:8px;padding:11px 13px;margin:12px 0 4px;font-size:11.5px;line-height:1.6;color:var(--ink-2);}
+  .calc code{color:var(--ink);}
 
   details{margin-top:12px;}
   summary{font-size:11px;color:var(--brand);cursor:pointer;font-weight:600;text-transform:uppercase;letter-spacing:.4px;}
-  .headlines{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:10px;}
-  .headlines li{display:grid;grid-template-columns:52px 1fr;gap:10px;align-items:start;font-size:12px;line-height:1.4;}
-  .score{font-weight:700;font-variant-numeric:tabular-nums;text-align:right;padding-top:1px;}
-  .hl-title a{text-decoration:none;}
-  .hl-title a:hover{text-decoration:underline;}
-  .hl-meta{color:var(--muted);font-size:10.5px;margin-top:2px;}
-  .hl-terms{color:var(--ink-2);}
-  .interview-row{background:#fce4f1;border-radius:4px;padding:1px 5px;font-size:10px;color:var(--brand);font-weight:700;text-transform:uppercase;margin-left:6px;}
+  .ivlist{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:11px;}
+  .ivlist li{display:grid;grid-template-columns:60px 1fr;gap:10px;align-items:start;font-size:12px;line-height:1.4;}
+  .pts{font-weight:800;font-variant-numeric:tabular-nums;text-align:right;color:var(--brand);padding-top:1px;}
+  .pts small{display:block;font-size:9px;font-weight:600;color:var(--muted);letter-spacing:.3px;}
+  .iv-title a{text-decoration:none;font-weight:600;}
+  .iv-title a:hover{text-decoration:underline;}
+  .iv-who{color:var(--ink);}
+  .iv-meta{color:var(--muted);font-size:10.5px;margin-top:2px;}
+  .fmt{display:inline-block;font-size:9.5px;letter-spacing:.4px;text-transform:uppercase;padding:1px 6px;border-radius:20px;font-weight:700;margin-left:4px;}
+  .fmt.podcast{background:#efe6fb;color:#5a34b8;}
+  .fmt.tier1{background:#fce4f1;color:var(--brand);}
+  .fmt.entretien{background:#e6f3ec;color:var(--up);}
 
   .empty{background:var(--surface);border:1px dashed var(--baseline);border-radius:10px;color:var(--ink-2);font-size:13px;padding:40px;text-align:center;}
 </style>
@@ -117,8 +102,8 @@
 <header>
   <div class="headbar">
     <span class="logo-dot"></span>
-    <h1>Indice RP</h1>
-    <span class="tag">CAC 40 · veille réputationnelle</span>
+    <h1>Présence média</h1>
+    <span class="tag">CAC 40 · prises de parole des dirigeants</span>
   </div>
 </header>
 
@@ -143,8 +128,8 @@
   <div class="legend-hint">Clique une entreprise pour la surligner dans le graphique (max 8). Les autres restent en gris clair.</div>
   <div class="legend" id="legend"></div>
 
-  <h2 class="sec">Classement — de la meilleure à la moins bonne presse</h2>
-  <p class="sec-sub">Chaque indice = <code>100 + 40 × balance de sentiment + bonus interviews</code>. Déplie une entreprise pour voir, titre par titre, le score qui a compté.</p>
+  <h2 class="sec">Classement — dirigeants les plus présents dans les médias</h2>
+  <p class="sec-sub">Score de présence = somme des points de chaque prise de parole : <code>base 10 × qualité du média × format × récence</code>. Déplie une entreprise pour voir chaque interview et les points qu'elle a rapportés.</p>
   <div id="ranking"><div class="empty">Chargement…</div></div>
 </div>
 
@@ -153,27 +138,25 @@ const SUPABASE_URL = 'https://gcgybmpeacacerehfzfb.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_FCpLlXoX1xH6p8TnWO_qnA_Q4E0f6UZ';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+const WINDOW = 90, RECENCY_FLOOR = 0.25, POINTS_BASE = 10;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => (s || '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt = (n, d=1) => (n == null || isNaN(n)) ? '—' : Number(n).toFixed(d);
-
-// Palette de surlignage (validée sur fond blanc — identité renforcée par légende + étiquettes).
 const HL_COLORS = ['#2a78d6','#eb6834','#1baf7a','#4a3aa7','#e34948','#008300','#eda100','#0f9bd1'];
 
 const state = { periodDays: 90, highlight: new Map(), data: null };
 
-// ---------------------------------------------------------------------------
-// Chargement
-// ---------------------------------------------------------------------------
+function recency(ageDays){ return Math.max(RECENCY_FLOOR, 1 - ageDays / WINDOW); }
+
 async function load(){
   try {
-    const [{ data: companies, error: e1 }, { data: snaps, error: e2 }, { data: arts, error: e3 }] =
+    const [{ data: companies, error: e1 }, { data: snaps, error: e2 }, { data: ivs, error: e3 }] =
       await Promise.all([
         sb.from('companies').select('id,name,ceo_name,slug').eq('active', true).order('name'),
         sb.from('pr_index_snapshots').select('*').order('as_of_date', { ascending: true }),
-        sb.from('pr_articles')
-          .select('company_id,url,title,source,source_tier,published_at,sentiment_label,sentiment_score,matched_terms,is_ceo_interview')
-          .order('published_at', { ascending: false }).limit(1500),
+        sb.from('pr_interviews')
+          .select('company_id,url,title,source,source_tier,published_at,interviewee_name,interviewee_role,is_ceo,format,weight')
+          .order('published_at', { ascending: false }).limit(2000),
       ]);
     if (e1 || e2 || e3) throw (e1 || e2 || e3);
 
@@ -181,26 +164,22 @@ async function load(){
       $('ranking').innerHTML = '<div class="empty">Aucune entreprise. Exécute <code>seed-cac40.sql</code> puis lance le workflow « Indice RP ».</div>';
       return;
     }
-
-    const snapsByCo = {}, artsByCo = {}, coById = {};
-    companies.forEach((c) => { coById[c.id] = c; snapsByCo[c.id] = []; artsByCo[c.id] = []; });
+    const snapsByCo = {}, ivsByCo = {}, coById = {};
+    companies.forEach((c) => { coById[c.id] = c; snapsByCo[c.id] = []; ivsByCo[c.id] = []; });
     (snaps || []).forEach((s) => (snapsByCo[s.company_id] ||= []).push(s));
-    (arts || []).forEach((a) => (artsByCo[a.company_id] ||= []).push(a));
-
+    (ivs || []).forEach((a) => (ivsByCo[a.company_id] ||= []).push(a));
     const allDates = [...new Set((snaps || []).map((s) => s.as_of_date))].sort();
-    state.data = { companies, coById, snapsByCo, artsByCo, allDates };
+    state.data = { companies, coById, snapsByCo, ivsByCo, allDates };
 
     setupPeriods();
     renderAll();
   } catch (err){
     $('ranking').innerHTML = `<div class="empty">Erreur de chargement : ${esc(err.message || String(err))}<br>
-      Vérifie l'URL / la clé publishable et que <code>schema-pr.sql</code> a été exécuté.</div>`;
+      Vérifie l'URL / la clé publishable et que <code>schema-pr.sql</code> (v2) a été exécuté.</div>`;
   }
 }
 
-// ---------------------------------------------------------------------------
-// Séries & moyennes
-// ---------------------------------------------------------------------------
+// --- Séries ---
 function datesInWindow(){
   const { allDates } = state.data;
   if (!allDates.length) return [];
@@ -209,29 +188,22 @@ function datesInWindow(){
   const cutoff = new Date(last.getTime() - state.periodDays * 86400000);
   return allDates.filter((d) => new Date(d) >= cutoff);
 }
-
-// valeur d'indice d'une entreprise à une date donnée (ou null)
 function valueAt(companyId, date){
   const s = state.data.snapsByCo[companyId].find((x) => x.as_of_date === date);
   return s ? s.index_value : null;
 }
-
-// moyenne du CAC 40 par date (sur les entreprises ayant un point ce jour-là)
 function averageSeries(dates){
   return dates.map((d) => {
     let sum = 0, n = 0;
-    for (const c of state.data.companies){
-      const v = valueAt(c.id, d);
-      if (v != null){ sum += v; n++; }
-    }
+    for (const c of state.data.companies){ const v = valueAt(c.id, d); if (v != null){ sum += v; n++; } }
     return n ? sum / n : null;
   });
 }
 
-// ---------------------------------------------------------------------------
-// Rendu principal
-// ---------------------------------------------------------------------------
 function renderAll(){ renderHero(); renderChart(); renderLegend(); renderRanking(); renderFilterInfo(); }
+
+function deltaClass(dr){ return dr == null ? 'flat' : dr > 0 ? 'up' : dr < 0 ? 'down' : 'flat'; }
+function deltaTxt(dr, suffix=''){ return dr == null ? '—' : `${dr>0?'▲ +':dr<0?'▼ ':'± '}${fmt(Math.abs(dr),1)}${suffix}`; }
 
 function renderHero(){
   const dates = datesInWindow();
@@ -239,28 +211,19 @@ function renderHero(){
   const last = avg.length ? avg[avg.length - 1] : null;
   const prev = avg.length > 1 ? avg[avg.length - 2] : null;
   const dr = (last != null && prev != null) ? Math.round((last - prev) * 10) / 10 : null;
-  const dCls = dr == null ? 'flat' : dr > 0 ? 'up' : dr < 0 ? 'down' : 'flat';
-  const dTxt = dr == null ? 'point de départ' : `${dr > 0 ? '▲ +' : dr < 0 ? '▼ ' : '± '}${fmt(Math.abs(dr),1)} vs veille`;
-
   const withIdx = state.data.companies.filter((c) => state.data.snapsByCo[c.id].length);
   const lastDate = state.data.allDates[state.data.allDates.length - 1];
 
   $('hero').innerHTML = `<div class="hero">
     <div>
-      <div class="label">Indice RP moyen · CAC 40</div>
-      <div class="big ${last >= 100 ? 'up' : last != null ? 'down' : ''}">${last != null ? fmt(last,1) : '—'}</div>
-      <div class="delta ${dCls}">${dTxt}</div>
-      <div class="sub">Base 100 = presse neutre · fenêtre ${state.periodDays ? state.periodDays + ' j' : 'complète'}</div>
+      <div class="label">Présence média moyenne · CAC 40</div>
+      <div class="big ${deltaClass(dr)}">${last != null ? fmt(last,1) : '—'}</div>
+      <div class="delta ${deltaClass(dr)}">${dr == null ? 'point de départ' : deltaTxt(dr,' vs veille')}</div>
+      <div class="sub">Points de présence · fenêtre ${state.periodDays ? state.periodDays + ' j' : 'complète'}</div>
     </div>
     <div class="spacer"></div>
-    <div class="ministat">
-      <div class="n">${withIdx.length}/${state.data.companies.length}</div>
-      <div class="k">entreprises notées</div>
-    </div>
-    <div class="ministat">
-      <div class="n">${lastDate || '—'}</div>
-      <div class="k">dernière mise à jour</div>
-    </div>
+    <div class="ministat"><div class="n">${withIdx.length}/${state.data.companies.length}</div><div class="k">entreprises suivies</div></div>
+    <div class="ministat"><div class="n">${lastDate || '—'}</div><div class="k">dernière mise à jour</div></div>
   </div>`;
 }
 
@@ -269,60 +232,38 @@ function renderFilterInfo(){
   $('filterbox').innerHTML = n
     ? `<b>${n}</b> entreprise${n>1?'s':''} surlignée${n>1?'s':''} <span class="clearlink" id="clearhl">tout effacer</span>`
     : `<span class="muted">Aucune entreprise surlignée</span>`;
-  const c = $('clearhl');
-  if (c) c.onclick = () => { state.highlight.clear(); renderAll(); };
+  const c = $('clearhl'); if (c) c.onclick = () => { state.highlight.clear(); renderAll(); };
 }
 
-// --- Graphique SVG multi-lignes ---
+// --- Graphique ---
 function renderChart(){
   const dates = datesInWindow();
   const W = 1000, H = 380, ML = 46, MR = 64, MT = 16, MB = 28;
   const iw = W - ML - MR, ih = H - MT - MB;
+  if (dates.length === 0){ $('chart').innerHTML = '<div class="chart-note">Pas encore de données.</div>'; return; }
 
-  if (dates.length === 0){
-    $('chart').innerHTML = '<div class="chart-note">Pas encore de données.</div>';
-    return;
-  }
-
-  // domaine Y : toutes les valeurs de la fenêtre + la ligne 100
-  let vals = [100];
-  for (const c of state.data.companies)
-    for (const d of dates){ const v = valueAt(c.id, d); if (v != null) vals.push(v); }
-  let ymin = Math.min(...vals), ymax = Math.max(...vals);
-  const pad = Math.max((ymax - ymin) * 0.12, 2);
-  ymin -= pad; ymax += pad;
+  let vals = [];
+  for (const c of state.data.companies) for (const d of dates){ const v = valueAt(c.id, d); if (v != null) vals.push(v); }
+  if (!vals.length) vals = [0, 1];
+  let ymin = Math.min(...vals, 0), ymax = Math.max(...vals);
+  const pad = Math.max((ymax - ymin) * 0.12, 2); ymax += pad;
 
   const n = dates.length;
   const xAt = (i) => n === 1 ? ML + iw / 2 : ML + (i / (n - 1)) * iw;
   const yAt = (v) => MT + ih - ((v - ymin) / (ymax - ymin)) * ih;
+  const linePath = (id) => { const p=[]; dates.forEach((d,i)=>{const v=valueAt(id,d); if(v!=null)p.push([xAt(i),yAt(v)]);}); return p; };
+  const toPath = (pts) => pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
 
-  const linePath = (companyId) => {
-    const pts = [];
-    dates.forEach((d, i) => { const v = valueAt(companyId, d); if (v != null) pts.push([xAt(i), yAt(v)]); });
-    return pts;
-  };
-  const toPath = (pts) => pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
-
-  // grille + axes Y (ymin, 100, ymax)
-  const yticks = [ymin + pad, 100, ymax - pad].filter((v, i, a) => a.indexOf(v) === i);
   let svg = '';
-  yticks.forEach((v) => {
+  [ymin, (ymin+ymax)/2, ymax].forEach((v) => {
     const y = yAt(v);
-    const is100 = Math.abs(v - 100) < 0.001;
-    svg += `<line x1="${ML}" y1="${y.toFixed(1)}" x2="${W-MR}" y2="${y.toFixed(1)}"
-      stroke="${is100 ? 'var(--baseline)' : 'var(--grid)'}" ${is100 ? 'stroke-dasharray="4 3"' : ''}/>`;
+    svg += `<line x1="${ML}" y1="${y.toFixed(1)}" x2="${W-MR}" y2="${y.toFixed(1)}" stroke="var(--grid)"/>`;
     svg += `<text x="${ML-8}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="var(--font)">${fmt(v,0)}</text>`;
   });
-
-  // ticks X (jusqu'à 5 dates)
   const step = Math.max(1, Math.ceil(n / 5));
-  for (let i = 0; i < n; i += step){
-    const x = xAt(i);
-    const label = dates[i].slice(5); // MM-DD
-    svg += `<text x="${x.toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--font)">${label}</text>`;
-  }
+  for (let i = 0; i < n; i += step)
+    svg += `<text x="${xAt(i).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--font)">${dates[i].slice(5)}</text>`;
 
-  // lignes de contexte (toutes les entreprises non surlignées) en gris clair
   for (const c of state.data.companies){
     if (state.highlight.has(c.id)) continue;
     const pts = linePath(c.id);
@@ -330,175 +271,129 @@ function renderChart(){
     else if (pts.length === 1) svg += `<circle cx="${pts[0][0].toFixed(1)}" cy="${pts[0][1].toFixed(1)}" r="2" fill="var(--context)"/>`;
   }
 
-  // entreprises surlignées (couleur + étiquette de bout de ligne)
   const endLabels = [];
   for (const [id, color] of state.highlight){
-    const pts = linePath(id);
-    if (!pts.length) continue;
+    const pts = linePath(id); if (!pts.length) continue;
     if (pts.length > 1) svg += `<path d="${toPath(pts)}" fill="none" stroke="${color}" stroke-width="2"/>`;
-    const end = pts[pts.length - 1];
-    svg += `<circle cx="${end[0].toFixed(1)}" cy="${end[1].toFixed(1)}" r="3" fill="${color}"/>`;
-    endLabels.push({ x: end[0], y: end[1], color, name: state.data.coById[id].name });
+    const e = pts[pts.length-1];
+    svg += `<circle cx="${e[0].toFixed(1)}" cy="${e[1].toFixed(1)}" r="3" fill="${color}"/>`;
+    endLabels.push({ x:e[0], y:e[1], color, name: state.data.coById[id].name });
   }
-  // dé-chevauchement vertical des étiquettes (min 13 px d'écart)
-  endLabels.sort((a, b) => a.y - b.y);
-  for (let i = 1; i < endLabels.length; i++){
-    if (endLabels[i].y - endLabels[i-1].y < 13) endLabels[i].y = endLabels[i-1].y + 13;
-  }
-  for (const L of endLabels){
+  endLabels.sort((a,b)=>a.y-b.y);
+  for (let i=1;i<endLabels.length;i++) if (endLabels[i].y-endLabels[i-1].y<13) endLabels[i].y=endLabels[i-1].y+13;
+  for (const L of endLabels)
     svg += `<text x="${(L.x+7).toFixed(1)}" y="${(L.y+3.5).toFixed(1)}" font-size="11" font-weight="600" fill="${L.color}" font-family="var(--font)">${esc(L.name.slice(0,14))}</text>`;
-  }
 
-  // ligne moyenne (héros) en rose, épaisse, au-dessus
   const avg = averageSeries(dates);
-  const avgPts = [];
-  avg.forEach((v, i) => { if (v != null) avgPts.push([xAt(i), yAt(v)]); });
+  const avgPts = []; avg.forEach((v,i)=>{ if(v!=null) avgPts.push([xAt(i),yAt(v)]); });
   if (avgPts.length > 1) svg += `<path d="${toPath(avgPts)}" fill="none" stroke="var(--brand)" stroke-width="3"/>`;
-  if (avgPts.length) { const e = avgPts[avgPts.length-1]; svg += `<circle cx="${e[0].toFixed(1)}" cy="${e[1].toFixed(1)}" r="4" fill="var(--brand)"/>`; }
+  if (avgPts.length){ const e=avgPts[avgPts.length-1]; svg += `<circle cx="${e[0].toFixed(1)}" cy="${e[1].toFixed(1)}" r="4" fill="var(--brand)"/>`; }
 
-  // couche de survol (crosshair + tooltip)
   svg += `<line id="crosshair" x1="0" y1="${MT}" x2="0" y2="${MT+ih}" stroke="var(--ink-2)" stroke-width="1" opacity="0"/>`;
   svg += `<rect id="hovercatch" x="${ML}" y="${MT}" width="${iw}" height="${ih}" fill="transparent"/>`;
+  $('chart').innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${svg}</svg>`;
+  wireHover({ dates, xAt, W, avg });
 
-  $('chart').innerHTML =
-    `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${svg}</svg>`;
-
-  wireHover({ dates, xAt, W, ML, MR, iw, avg });
-
-  if (dates.length < 2){
+  if (dates.length < 2)
     $('chart').insertAdjacentHTML('beforeend',
       '<div class="chart-note">Un seul relevé pour l\'instant — la courbe se dessine à partir de 2 jours de veille (un point par jour).</div>');
-  }
 }
 
 function wireHover(ctx){
-  const svg = $('chart').querySelector('svg');
-  const cross = $('crosshair');
-  const tip = $('tooltip');
-  const catcher = $('hovercatch');
-  const card = $('chart').closest('.chartcard');
-  const { dates, xAt, W } = ctx;
-
-  const move = (evt) => {
+  const svg = $('chart').querySelector('svg'), cross = $('crosshair'), tip = $('tooltip'), catcher = $('hovercatch');
+  const card = $('chart').closest('.chartcard'); const { dates, xAt, W } = ctx;
+  catcher.addEventListener('mousemove', (evt) => {
     const rect = svg.getBoundingClientRect();
     const sx = (evt.clientX - rect.left) * (W / rect.width);
-    // date la plus proche
-    let best = 0, bestd = Infinity;
-    dates.forEach((d, i) => { const dd = Math.abs(xAt(i) - sx); if (dd < bestd){ bestd = dd; best = i; } });
+    let best = 0, bd = Infinity;
+    dates.forEach((d,i)=>{const dd=Math.abs(xAt(i)-sx); if(dd<bd){bd=dd;best=i;}});
     const gx = xAt(best);
-    cross.setAttribute('x1', gx); cross.setAttribute('x2', gx); cross.setAttribute('opacity', '0.5');
-
+    cross.setAttribute('x1',gx); cross.setAttribute('x2',gx); cross.setAttribute('opacity','0.5');
     const rows = [];
-    const av = ctx.avg[best];
-    if (av != null) rows.push(`<div class="tt-row"><span><span class="sw" style="background:var(--brand)"></span>Moyenne CAC 40</span><b>${fmt(av,1)}</b></div>`);
-    for (const [id, color] of state.highlight){
-      const v = valueAt(id, dates[best]);
-      if (v != null) rows.push(`<div class="tt-row"><span><span class="sw" style="background:${color}"></span>${esc(state.data.coById[id].name)}</span><b>${fmt(v,1)}</b></div>`);
-    }
+    if (ctx.avg[best]!=null) rows.push(`<div class="tt-row"><span><span class="sw" style="background:var(--brand)"></span>Moyenne CAC 40</span><b>${fmt(ctx.avg[best],1)}</b></div>`);
+    for (const [id,color] of state.highlight){ const v=valueAt(id,dates[best]); if(v!=null) rows.push(`<div class="tt-row"><span><span class="sw" style="background:${color}"></span>${esc(state.data.coById[id].name)}</span><b>${fmt(v,1)}</b></div>`); }
     tip.innerHTML = `<div class="tt-date">${dates[best]}</div>${rows.join('')}`;
     tip.style.opacity = '1';
-    const cardRect = card.getBoundingClientRect();
-    let left = (gx / W) * rect.width + (rect.left - cardRect.left) + 14;
-    if (left > cardRect.width - 180) left -= 200;
-    tip.style.left = left + 'px';
-    tip.style.top = '20px';
-  };
-  catcher.addEventListener('mousemove', move);
-  catcher.addEventListener('mouseleave', () => { tip.style.opacity = '0'; cross.setAttribute('opacity', '0'); });
+    const cr = card.getBoundingClientRect();
+    let left = (gx/W)*rect.width + (rect.left-cr.left) + 14;
+    if (left > cr.width - 180) left -= 200;
+    tip.style.left = left+'px'; tip.style.top = '20px';
+  });
+  catcher.addEventListener('mouseleave', () => { tip.style.opacity='0'; cross.setAttribute('opacity','0'); });
 }
 
-// --- Légende / filtre ---
 function renderLegend(){
-  const dates = datesInWindow();
-  const rows = state.data.companies.map((c) => {
+  $('legend').innerHTML = state.data.companies.map((c) => {
     const on = state.highlight.has(c.id);
     const color = on ? state.highlight.get(c.id) : 'var(--context)';
-    const v = state.data.snapsByCo[c.id].length ? state.data.snapsByCo[c.id].slice(-1)[0].index_value : null;
-    return `<div class="chip ${on?'on':''}" data-id="${c.id}">
-      <span class="sw" style="background:${color}"></span>${esc(c.name)}
-      <span class="v">${v != null ? fmt(v,1) : '—'}</span></div>`;
+    const snaps = state.data.snapsByCo[c.id];
+    const v = snaps.length ? snaps.slice(-1)[0].index_value : null;
+    return `<div class="chip ${on?'on':''}" data-id="${c.id}"><span class="sw" style="background:${color}"></span>${esc(c.name)}<span class="v">${v!=null?fmt(v,1):'—'}</span></div>`;
   }).join('');
-  $('legend').innerHTML = rows;
-  $('legend').querySelectorAll('.chip').forEach((el) => {
-    el.onclick = () => toggleHighlight(el.dataset.id);
-  });
+  $('legend').querySelectorAll('.chip').forEach((el) => el.onclick = () => toggleHighlight(el.dataset.id));
 }
-
 function toggleHighlight(id){
-  if (state.highlight.has(id)){ state.highlight.delete(id); }
-  else {
-    if (state.highlight.size >= 8) return; // cap dataviz : pas plus de 8 couleurs
-    const used = new Set(state.highlight.values());
-    const color = HL_COLORS.find((c) => !used.has(c)) || HL_COLORS[0];
-    state.highlight.set(id, color);
-  }
+  if (state.highlight.has(id)) state.highlight.delete(id);
+  else { if (state.highlight.size >= 8) return; const used=new Set(state.highlight.values()); state.highlight.set(id, HL_COLORS.find((c)=>!used.has(c))||HL_COLORS[0]); }
   renderAll();
 }
-
-// --- Sélecteur de période ---
 function setupPeriods(){
   $('periods').querySelectorAll('button').forEach((b) => {
     if (Number(b.dataset.d) === state.periodDays) b.classList.add('active');
-    b.onclick = () => {
-      state.periodDays = Number(b.dataset.d);
-      $('periods').querySelectorAll('button').forEach((x) => x.classList.remove('active'));
-      b.classList.add('active');
-      renderAll();
-    };
+    b.onclick = () => { state.periodDays = Number(b.dataset.d);
+      $('periods').querySelectorAll('button').forEach((x)=>x.classList.remove('active')); b.classList.add('active'); renderAll(); };
   });
 }
 
-// --- Classement + explication du calcul ---
-function scoreColor(s){ return s > 0 ? 'var(--up)' : s < 0 ? 'var(--down)' : 'var(--muted)'; }
-
+// --- Classement + explication ---
+function ivPoints(iv, now){
+  const age = iv.published_at ? Math.max(0, (now - new Date(iv.published_at).getTime())/86400000) : WINDOW;
+  return (iv.weight != null ? iv.weight : POINTS_BASE) * recency(age);
+}
+function fmtBadge(iv){
+  const b = [];
+  if (iv.format === 'podcast') b.push('<span class="fmt podcast">🎧 podcast</span>');
+  else if (iv.format === 'grand entretien') b.push('<span class="fmt entretien">grand entretien</span>');
+  else if (iv.format === 'entretien') b.push('<span class="fmt entretien">entretien</span>');
+  if (iv.source_tier === 1) b.push('<span class="fmt tier1">média cible</span>');
+  return b.join(' ');
+}
 function calcBlock(s){
-  const P = s.positive_count, N = s.negative_count, Z = s.neutral_count;
-  const bal = s.sentiment_balance != null ? s.sentiment_balance : (P - N) / (P + N + 5);
-  const balPts = 40 * bal;
-  const bonus = s.interview_bonus || 0;
+  const tp = Array.isArray(s.top_people) ? s.top_people : [];
+  const people = tp.length ? tp.map((p)=>`<b>${esc(p.name)}</b>${p.role?' ('+esc(p.role)+')':''} ×${p.count}`).join(' · ') : '—';
   return `<div class="calc">
-    <div class="row"><span>Base (presse neutre)</span><code>100.0</code></div>
-    <div class="row"><span>Balance sentiment <span class="muted">(P−N)/(P+N+5) = (${P}−${N})/(${P+N}+5) = ${fmt(bal,2)}</span></span><code class="${balPts>=0?'up':'down'}">${balPts>=0?'+':''}${fmt(balPts,1)}</code></div>
-    <div class="row"><span>Bonus interviews PDG <span class="muted">(${s.interview_count||0} en tier-1)</span></span><code class="${bonus>0?'up':''}">${bonus>0?'+':''}${fmt(bonus,1)}</code></div>
-    <div class="row total"><span>Indice</span><code>${fmt(s.index_value,1)}</code></div>
+    <div><code>Score = Σ (base 10 × qualité média × format × récence)</code></div>
+    <div>Sur ${WINDOW} j : <code>${s.interview_count||0}</code> prise(s) de parole, dont <code>${s.tier1_count||0}</code> en média cible et <code>${s.podcast_count||0}</code> podcast(s).</div>
+    <div style="margin-top:4px" class="people">Dirigeant·es : ${people}</div>
   </div>`;
 }
-
-function headlinesBlock(arts){
-  const list = arts.slice(0, 12);
-  if (!list.length) return '<p class="hl-meta" style="margin-top:10px">Aucun article capté sur la fenêtre.</p>';
-  return `<ul class="headlines">${list.map((a) => {
-    const s = a.sentiment_score || 0;
-    const terms = Array.isArray(a.matched_terms) ? a.matched_terms.map((t) => t.term).filter(Boolean) : [];
+function ivBlock(ivs, now){
+  const list = ivs.slice(0, 12);
+  if (!list.length) return '<p class="iv-meta" style="margin-top:10px">Aucune prise de parole captée sur la fenêtre.</p>';
+  return `<ul class="ivlist">${list.map((iv) => {
+    const pts = ivPoints(iv, now);
     return `<li>
-      <div class="score" style="color:${scoreColor(s)}">${s>0?'+':''}${fmt(s,1)}</div>
-      <div class="hl-title">
-        <a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a>${a.is_ceo_interview?'<span class="interview-row">itw PDG</span>':''}
-        <div class="hl-meta">${esc(a.source||'')}${a.published_at?' · '+a.published_at.slice(0,10):''}${terms.length?' · <span class="hl-terms">'+esc(terms.slice(0,5).join(', '))+'</span>':''}</div>
+      <div class="pts">+${fmt(pts,1)}<small>PTS</small></div>
+      <div>
+        <div class="iv-title"><a href="${esc(iv.url)}" target="_blank" rel="noopener">${esc(iv.title)}</a></div>
+        <div class="iv-meta"><span class="iv-who">${esc(iv.interviewee_name||'Dirigeant')}${iv.interviewee_role?' · '+esc(iv.interviewee_role):''}</span> — ${esc(iv.source||'')}${iv.published_at?' · '+iv.published_at.slice(0,10):''} ${fmtBadge(iv)}</div>
       </div>
     </li>`;
   }).join('')}</ul>`;
 }
-
 function renderRanking(){
+  const now = Date.now();
   const rows = state.data.companies
     .map((c) => ({ c, s: state.data.snapsByCo[c.id].slice(-1)[0], hist: state.data.snapsByCo[c.id] }))
     .filter((r) => r.s)
     .sort((a, b) => b.s.index_value - a.s.index_value);
-
-  if (!rows.length){
-    $('ranking').innerHTML = '<div class="empty">Aucun indice calculé pour l\'instant. Lance le workflow « Indice RP » puis reviens ici.</div>';
-    return;
-  }
+  if (!rows.length){ $('ranking').innerHTML = '<div class="empty">Aucun score pour l\'instant. Lance le workflow « Indice RP » puis reviens ici.</div>'; return; }
 
   $('ranking').innerHTML = '<div class="grid">' + rows.map((r, i) => {
     const s = r.s;
     const prev = r.hist.length > 1 ? r.hist[r.hist.length - 2].index_value : null;
     const dr = prev != null ? Math.round((s.index_value - prev) * 10) / 10 : null;
-    const dCls = dr == null ? 'flat' : dr > 0 ? 'up' : dr < 0 ? 'down' : 'flat';
-    const dTxt = dr == null ? 'nouveau' : `${dr>0?'▲ +':dr<0?'▼ ':'± '}${fmt(Math.abs(dr),1)}`;
-    const P = s.positive_count, N = s.negative_count, Z = s.neutral_count, T = Math.max(P+N+Z,1);
-    const arts = state.data.artsByCo[r.c.id] || [];
+    const ivs = state.data.ivsByCo[r.c.id] || [];
     return `<div class="card">
       <div class="card-head">
         <div>
@@ -507,24 +402,21 @@ function renderRanking(){
           <div class="co-ceo">${r.c.ceo_name ? 'PDG · ' + esc(r.c.ceo_name) : ''}</div>
         </div>
         <div class="idx">
-          <div class="val ${s.index_value>=100?'up':'down'}">${fmt(s.index_value,1)}</div>
-          <div class="d ${dCls}">${dTxt}</div>
+          <div class="val ${deltaClass(dr)}">${fmt(s.index_value,1)}</div>
+          <div class="u">pts présence</div>
+          <div class="d ${deltaClass(dr)}">${dr==null?'nouveau':deltaTxt(dr)}</div>
         </div>
       </div>
-      <div class="senti-bar" title="${P} positifs · ${N} négatifs · ${Z} neutres">
-        <div class="p" style="width:${(P/T*100).toFixed(1)}%"></div>
-        <div class="n" style="width:${(N/T*100).toFixed(1)}%"></div>
-        <div class="z" style="width:${(Z/T*100).toFixed(1)}%"></div>
-      </div>
-      <div class="metaline">
-        <span>Ratio +/− <b>${fmt(s.ratio_pos_neg,2)}</b></span>
-        <span><b>${P}</b>+ · <b>${N}</b>− · <b>${Z}</b>~</span>
-        ${s.interview_count>0?`<span class="badge">${s.interview_count} itw PDG</span>`:''}
+      <div class="statline">
+        <div><div class="n">${s.interview_count||0}</div><div class="k">prises de parole</div></div>
+        <div><div class="n">${s.tier1_count||0}</div><div class="k">média cible</div></div>
+        <div><div class="n">${s.podcast_count||0}</div><div class="k">podcasts</div></div>
+        <div><div class="n">${s.people_count||0}</div><div class="k">dirigeant·es</div></div>
       </div>
       ${calcBlock(s)}
       <details>
-        <summary>Voir les titres et leur score (${arts.length})</summary>
-        ${headlinesBlock(arts)}
+        <summary>Voir les prises de parole et leurs points (${ivs.length})</summary>
+        ${ivBlock(ivs, now)}
       </details>
     </div>`;
   }).join('') + '</div>';
