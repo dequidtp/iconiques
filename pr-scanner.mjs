@@ -33,7 +33,11 @@ const PODCAST_WEIGHT = 1.4;     // format podcast
 const LONGFORM_WEIGHT = 1.3;    // "grand entretien"
 const STD_WEIGHT = 1.0;         // interview / entretien standard
 const RECENCY_FLOOR = 0.25;     // une vieille interview compte encore un peu
-const REQUEST_DELAY_MS = 1200;
+// Google News throttle vite depuis une IP partagée (runner GitHub Actions).
+// Cadence prudente + réessais : mieux vaut un run lent qu'un run vide.
+const REQUEST_DELAY_MS = 3000;
+const FETCH_RETRIES = 3;
+const BACKOFF_MS = 4000;        // 4s, 8s, 16s
 
 // Médias « tier-1 » (presse cible). Comparaison en minuscules, sans accents.
 const TIER1_SOURCES = [
@@ -252,12 +256,43 @@ function parseRss(xml) {
   return items;
 }
 
+// Renvoie { items, ok }. `ok:false` signale un échec de collecte (throttling,
+// panne réseau) — à NE PAS confondre avec « aucune interview trouvée » : dans ce
+// cas on s'interdit d'écrire un snapshot, sinon un run bloqué remettrait le
+// score de l'entreprise à 0.
 async function fetchNews(query) {
-  const res = await fetch(newsRssUrl(query), {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; iconiques-pr-index/2.0)' },
-  });
-  if (!res.ok) { console.error(`  Google News ${res.status} pour « ${query} »`); return []; }
-  return parseRss(await res.text());
+  for (let attempt = 0; attempt <= FETCH_RETRIES; attempt++) {
+    let res;
+    try {
+      res = await fetch(newsRssUrl(query), {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; iconiques-pr-index/2.0)',
+          'Accept-Language': 'fr-FR,fr;q=0.9',
+        },
+      });
+    } catch (err) {
+      if (attempt === FETCH_RETRIES) {
+        console.error(`  ⚠ réseau KO pour « ${query} » : ${err.message}`);
+        return { items: [], ok: false };
+      }
+      await sleep(BACKOFF_MS * Math.pow(2, attempt));
+      continue;
+    }
+
+    if (res.ok) return { items: parseRss(await res.text()), ok: true };
+
+    // 429 (trop de requêtes) et 5xx sont temporaires → on réessaie
+    const retryable = res.status === 429 || res.status >= 500;
+    if (retryable && attempt < FETCH_RETRIES) {
+      const wait = BACKOFF_MS * Math.pow(2, attempt);
+      console.warn(`  ⏳ Google News ${res.status} — nouvelle tentative dans ${Math.round(wait / 1000)}s`);
+      await sleep(wait);
+      continue;
+    }
+    console.error(`  ⚠ Google News ${res.status} pour « ${query} » (abandon)`);
+    return { items: [], ok: false };
+  }
+  return { items: [], ok: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -362,9 +397,13 @@ async function processCompany(company) {
 
   const seen = new Set();
   const rows = [];
+  let anyFetchOk = false, scanned = 0;
 
   for (const q of queries) {
-    for (const it of await fetchNews(q)) {
+    const { items, ok } = await fetchNews(q);
+    if (ok) anyFetchOk = true;
+    scanned += items.length;
+    for (const it of items) {
       if (seen.has(it.link)) continue;
       seen.add(it.link);
 
@@ -385,6 +424,13 @@ async function processCompany(company) {
     await sleep(REQUEST_DELAY_MS);
   }
 
+  // Collecte entièrement KO : on n'écrit AUCUN snapshot. Écrire 0 ici
+  // effacerait le score réel de l'entreprise sur la foi d'un simple throttling.
+  if (!anyFetchOk) {
+    console.error(`  ${company.name}: collecte échouée — snapshot NON écrit (score précédent conservé).`);
+    return null;
+  }
+
   await insertInterviews(rows);
 
   const windowIvs = await fetchWindowInterviews(company.id);
@@ -392,7 +438,7 @@ async function processCompany(company) {
   await upsertSnapshot(company.id, metrics);
 
   console.log(
-    `  ${company.name}: ${rows.length} prise(s) de parole captée(s), présence ${metrics.index_value} ` +
+    `  ${company.name}: ${scanned} titre(s) examiné(s) → ${rows.length} prise(s) de parole, présence ${metrics.index_value} ` +
     `(${metrics.interview_count} sur 90j, ${metrics.tier1_count} tier-1, ${metrics.podcast_count} podcast, ${metrics.people_count} dirigeant·es).`
   );
   return metrics;
@@ -412,12 +458,29 @@ async function main() {
   }
 
   console.log(`Indice de présence média pour ${companies.length} entreprise(s)...`);
+  let ok = 0, failed = 0, withSpeech = 0;
   for (const company of companies) {
-    try { await processCompany(company); }
-    catch (err) { console.error(`  ${company.name}: échec — ${err.message}`); }
+    try {
+      const m = await processCompany(company);
+      if (m === null) failed++;
+      else { ok++; if (m.interview_count > 0) withSpeech++; }
+    } catch (err) {
+      failed++;
+      console.error(`  ${company.name}: échec — ${err.message}`);
+    }
     await sleep(REQUEST_DELAY_MS);
   }
-  console.log('Terminé.');
+
+  console.log(
+    `\nTerminé. ${ok}/${companies.length} entreprise(s) mises à jour, ` +
+    `${withSpeech} avec au moins une prise de parole, ${failed} en échec de collecte.`
+  );
+  if (failed > companies.length / 4) {
+    console.warn(
+      '⚠ Beaucoup d\'échecs de collecte : Google News limite probablement le débit ' +
+      'depuis ce runner. Augmente REQUEST_DELAY_MS en tête de pr-scanner.mjs, ou relance plus tard.'
+    );
+  }
 }
 
 const isEntrypoint = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href;
