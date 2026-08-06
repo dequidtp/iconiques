@@ -52,6 +52,9 @@
   .tooltip .tt-row{display:flex;justify-content:space-between;gap:14px;}
   .tooltip .tt-row .sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;}
   .tooltip .tt-hint{color:#b9beca;font-size:10px;margin-top:5px;padding-top:4px;border-top:1px solid rgba(255,255,255,.15);}
+  .tooltip .tt-sep{color:#b9beca;font-size:9.5px;text-transform:uppercase;letter-spacing:.6px;margin-top:6px;padding-top:5px;border-top:1px solid rgba(255,255,255,.15);}
+  .tooltip .tt-top{color:#d9dce4;font-size:11px;}
+  .tooltip .tt-rank{color:#b9beca;font-size:10px;}
 
   .legend{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px;max-height:132px;overflow-y:auto;padding:2px;}
   .chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);background:var(--surface);border-radius:20px;padding:5px 11px 5px 8px;font-size:12px;cursor:pointer;color:var(--ink-2);user-select:none;}
@@ -332,27 +335,40 @@ function wireHover(ctx){
       if (dist < nearestDist){ nearestDist = dist; hoveredId = c.id; nearestVal = v; }
     }
 
-    // met la ligne survolée en avant (par-dessus les autres)
+    // met la ligne survolée en avant (par-dessus les autres). Pas de seuil de
+    // distance : on nomme TOUJOURS la courbe la plus proche, sinon il faut aller
+    // chercher l'information dans la liste en dessous.
     layer.innerHTML = '';
-    if (hoveredId && nearestDist < 40){
+    if (hoveredId){
       const color = state.highlight.get(hoveredId) || 'var(--ink)';
       const pts = linePath(hoveredId);
       if (pts.length > 1) layer.innerHTML += `<path d="${toPath(pts)}" fill="none" stroke="${color}" stroke-width="2.5"/>`;
       layer.innerHTML += `<circle cx="${gx.toFixed(1)}" cy="${yAt(nearestVal).toFixed(1)}" r="4.5" fill="${color}" stroke="var(--surface)" stroke-width="2"/>`;
-    } else {
-      hoveredId = null;
     }
+
+    // classement à cette date — répond directement à « qui est le plus haut ? »
+    const ranked = state.data.companies
+      .map((c) => ({ c, v: valueAt(c.id, dates[best]) }))
+      .filter((r) => r.v != null)
+      .sort((a, b) => b.v - a.v);
 
     const rows = [];
     if (hoveredId){
       const color = state.highlight.get(hoveredId) || 'var(--ink)';
-      rows.push(`<div class="tt-row"><span><span class="sw" style="background:${color}"></span><b>${esc(state.data.coById[hoveredId].name)}</b></span><b>${fmt(nearestVal,1)}</b></div>`);
+      const rank = ranked.findIndex((r) => r.c.id === hoveredId) + 1;
+      rows.push(`<div class="tt-row"><span><span class="sw" style="background:${color}"></span><b>${esc(state.data.coById[hoveredId].name)}</b>${rank ? ` <span class="tt-rank">#${rank}</span>` : ''}</span><b>${fmt(nearestVal,1)}</b></div>`);
     }
     if (ctx.avg[best] != null) rows.push(`<div class="tt-row"><span><span class="sw" style="background:var(--brand)"></span>Moyenne CAC 40</span><b>${fmt(ctx.avg[best],1)}</b></div>`);
     for (const [id, color] of state.highlight){
       if (id === hoveredId) continue;
       const v = valueAt(id, dates[best]);
       if (v != null) rows.push(`<div class="tt-row"><span><span class="sw" style="background:${color}"></span>${esc(state.data.coById[id].name)}</span><b>${fmt(v,1)}</b></div>`);
+    }
+    if (ranked.length){
+      rows.push(`<div class="tt-sep">Top à cette date</div>`);
+      ranked.slice(0, 3).forEach((r, i) => {
+        rows.push(`<div class="tt-row tt-top"><span>${i+1}. ${esc(r.c.name)}</span><b>${fmt(r.v,1)}</b></div>`);
+      });
     }
     if (hoveredId) rows.push(`<div class="tt-hint">clic pour épingler</div>`);
 

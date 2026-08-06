@@ -547,8 +547,12 @@ function monthWindows(sinceDate, untilDate) {
 }
 
 async function backfillCompany(company, sinceDate, untilDate) {
-  // 1. compléter la base sur les périodes anciennes (au-delà de la fenêtre courante)
-  const windows = monthWindows(sinceDate, untilDate);
+  // 1. compléter la base. On remonte WINDOW_DAYS AVANT la date demandée : le
+  // score du jour J dépend des prises de parole des 90 j qui le précèdent.
+  // Sans ça, les premiers jours reconstitués partiraient artificiellement de 0
+  // et la courbe montrerait une fausse montée en escalier.
+  const collectFrom = new Date(sinceDate.getTime() - WINDOW_DAYS * 86400000);
+  const windows = monthWindows(collectFrom, untilDate);
   let collected = 0, fetchOk = false;
   for (const w of windows) {
     const { rows, anyFetchOk } = await collect(company, w);
@@ -592,10 +596,13 @@ async function runBackfill(sinceStr) {
   if (sinceDate >= untilDate) throw new Error('La date de départ doit être dans le passé.');
 
   const companies = await fetchActiveCompanies();
-  const windows = monthWindows(sinceDate, untilDate).length;
+  const collectFrom = new Date(sinceDate.getTime() - WINDOW_DAYS * 86400000);
+  const windows = monthWindows(collectFrom, untilDate).length;
   console.log(
-    `Reconstruction depuis le ${sinceStr} pour ${companies.length} entreprise(s) ` +
-    `(${windows} fenêtre(s) mensuelle(s) — comptez ~${Math.round(companies.length * windows * 2 * REQUEST_DELAY_MS / 60000)} min).`
+    `Reconstruction depuis le ${sinceStr} pour ${companies.length} entreprise(s).\n` +
+    `Collecte à partir du ${collectFrom.toISOString().slice(0, 10)} ` +
+    `(${WINDOW_DAYS} j d'amorçage, nécessaires pour que le premier jour ne parte pas de 0) : ` +
+    `${windows} fenêtre(s) mensuelle(s) — comptez ~${Math.round(companies.length * windows * 2 * REQUEST_DELAY_MS / 60000)} min.`
   );
 
   let days = 0;
