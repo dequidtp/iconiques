@@ -271,8 +271,13 @@ function detectInterview(item, company) {
 // ---------------------------------------------------------------------------
 // GOOGLE NEWS RSS
 // ---------------------------------------------------------------------------
-function newsRssUrl(query) {
-  const q = encodeURIComponent(`${query} when:${WINDOW_DAYS}d`);
+// `range` (optionnel) = { after: 'YYYY-MM-DD', before: 'YYYY-MM-DD' } pour aller
+// chercher des articles plus anciens que la fenêtre courante (mode reconstruction).
+function newsRssUrl(query, range) {
+  const period = range
+    ? `after:${range.after} before:${range.before}`
+    : `when:${WINDOW_DAYS}d`;
+  const q = encodeURIComponent(`${query} ${period}`);
   return `https://news.google.com/rss/search?q=${q}&hl=fr&gl=FR&ceid=FR:fr`;
 }
 
@@ -306,11 +311,11 @@ function parseRss(xml) {
 // panne réseau) — à NE PAS confondre avec « aucune interview trouvée » : dans ce
 // cas on s'interdit d'écrire un snapshot, sinon un run bloqué remettrait le
 // score de l'entreprise à 0.
-async function fetchNews(query) {
+async function fetchNews(query, range) {
   for (let attempt = 0; attempt <= FETCH_RETRIES; attempt++) {
     let res;
     try {
-      res = await fetch(newsRssUrl(query), {
+      res = await fetch(newsRssUrl(query, range), {
         headers: {
           'User-Agent': 'Mozilla/5.0 (compatible; iconiques-pr-index/2.0)',
           'Accept-Language': 'fr-FR,fr;q=0.9',
@@ -371,12 +376,18 @@ async function insertInterviews(rows) {
   });
 }
 
+const IV_FIELDS = 'interviewee_name,interviewee_role,is_ceo,format,source_tier,weight,published_at';
+
 async function fetchWindowInterviews(companyId) {
   const since = new Date(Date.now() - WINDOW_DAYS * 86400000).toISOString();
   const path = `pr_interviews?company_id=eq.${companyId}` +
-    `&published_at=gte.${since}` +
-    `&select=interviewee_name,interviewee_role,is_ceo,format,source_tier,weight,published_at`;
+    `&published_at=gte.${since}&select=${IV_FIELDS}`;
   return (await sb(path)) || [];
+}
+
+// Toutes les prises de parole d'une entreprise (mode reconstruction).
+async function fetchAllInterviews(companyId) {
+  return (await sb(`pr_interviews?company_id=eq.${companyId}&select=${IV_FIELDS}&limit=5000`)) || [];
 }
 
 // ---------------------------------------------------------------------------
@@ -417,23 +428,30 @@ function computeIndex(interviews, now = Date.now()) {
   };
 }
 
-async function upsertSnapshot(companyId, metrics) {
-  const row = {
+async function upsertSnapshots(rows) {
+  if (!rows.length) return;
+  // par lots, pour ne pas envoyer des milliers de lignes d'un coup
+  for (let i = 0; i < rows.length; i += 200) {
+    await sb('pr_index_snapshots?on_conflict=company_id,as_of_date', {
+      method: 'POST', body: rows.slice(i, i + 200),
+      prefer: 'resolution=merge-duplicates,return=minimal',
+    });
+  }
+}
+
+async function upsertSnapshot(companyId, metrics, asOfDate) {
+  await upsertSnapshots([{
     company_id: companyId,
-    as_of_date: new Date().toISOString().slice(0, 10),
+    as_of_date: asOfDate || new Date().toISOString().slice(0, 10),
     window_days: WINDOW_DAYS,
     ...metrics,
-  };
-  await sb('pr_index_snapshots?on_conflict=company_id,as_of_date', {
-    method: 'POST', body: row,
-    prefer: 'resolution=merge-duplicates,return=minimal',
-  });
+  }]);
 }
 
 // ---------------------------------------------------------------------------
 // TRAITEMENT D'UNE ENTREPRISE
 // ---------------------------------------------------------------------------
-async function processCompany(company) {
+function queriesFor(company) {
   const baseName = company.news_query || company.name;
   const queries = [];
   // PDG : requête LARGE sur son nom (on filtre ensuite localement les vraies
@@ -442,13 +460,18 @@ async function processCompany(company) {
   if (company.ceo_name) queries.push(`"${company.ceo_name}"`);
   // Autres dirigeants : requête ciblée interview/podcast (précision).
   queries.push(`"${baseName}" (PDG OR "directeur général" OR dirigeant OR patron) (interview OR entretien OR podcast OR "propos recueillis")`);
+  return queries;
+}
 
+// Collecte les prises de parole d'une entreprise sur une période donnée
+// (`range` = null pour la fenêtre courante). Renvoie { rows, anyFetchOk, scanned }.
+async function collect(company, range) {
   const seen = new Set();
   const rows = [];
   let anyFetchOk = false, scanned = 0;
 
-  for (const q of queries) {
-    const { items, ok } = await fetchNews(q);
+  for (const q of queriesFor(company)) {
+    const { items, ok } = await fetchNews(q, range);
     if (ok) anyFetchOk = true;
     scanned += items.length;
     for (const it of items) {
@@ -471,6 +494,11 @@ async function processCompany(company) {
     }
     await sleep(REQUEST_DELAY_MS);
   }
+  return { rows, anyFetchOk, scanned };
+}
+
+async function processCompany(company) {
+  const { rows, anyFetchOk, scanned } = await collect(company, null);
 
   // Collecte entièrement KO : on n'écrit AUCUN snapshot. Écrire 0 ici
   // effacerait le score réel de l'entreprise sur la foi d'un simple throttling.
@@ -493,11 +521,107 @@ async function processCompany(company) {
 }
 
 // ---------------------------------------------------------------------------
+// RECONSTRUCTION HISTORIQUE (--since YYYY-MM-DD)
+//
+// Chaque prise de parole est stockée avec sa date de publication : le score
+// d'un jour passé J est donc recalculable — c'est la somme des prises de parole
+// publiées dans les 90 j précédant J, avec la récence mesurée par rapport à J.
+// On complète d'abord la base en interrogeant Google News par fenêtres
+// mensuelles (`after:`/`before:`), puis on réécrit un snapshot par jour.
+//
+// ⚠️ C'est une RECONSTRUCTION : elle montre le score qu'on aurait mesuré avec ce
+// que Google News indexe *aujourd'hui*. Les articles dépubliés ou désindexés
+// depuis n'y figurent pas, et la couverture se dégrade en remontant le temps.
+// ---------------------------------------------------------------------------
+function monthWindows(sinceDate, untilDate) {
+  const windows = [];
+  let cur = new Date(sinceDate);
+  while (cur < untilDate) {
+    const next = new Date(cur);
+    next.setMonth(next.getMonth() + 1);
+    const end = next < untilDate ? next : untilDate;
+    windows.push({ after: cur.toISOString().slice(0, 10), before: end.toISOString().slice(0, 10) });
+    cur = next;
+  }
+  return windows;
+}
+
+async function backfillCompany(company, sinceDate, untilDate) {
+  // 1. compléter la base sur les périodes anciennes (au-delà de la fenêtre courante)
+  const windows = monthWindows(sinceDate, untilDate);
+  let collected = 0, fetchOk = false;
+  for (const w of windows) {
+    const { rows, anyFetchOk } = await collect(company, w);
+    if (anyFetchOk) fetchOk = true;
+    await insertInterviews(rows);
+    collected += rows.length;
+  }
+  if (!fetchOk) {
+    console.error(`  ${company.name}: collecte historique échouée — snapshots inchangés.`);
+    return 0;
+  }
+
+  // 2. recalculer un snapshot par jour, de `since` à aujourd'hui
+  const all = await fetchAllInterviews(company.id);
+  const snapshots = [];
+  for (let d = new Date(sinceDate); d <= untilDate; d.setDate(d.getDate() + 1)) {
+    const asOf = d.getTime();
+    const windowStart = asOf - WINDOW_DAYS * 86400000;
+    const inWindow = all.filter((iv) => {
+      if (!iv.published_at) return false;
+      const t = new Date(iv.published_at).getTime();
+      return t > windowStart && t <= asOf;
+    });
+    snapshots.push({
+      company_id: company.id,
+      as_of_date: new Date(asOf).toISOString().slice(0, 10),
+      window_days: WINDOW_DAYS,
+      backfilled: true,
+      ...computeIndex(inWindow, asOf),
+    });
+  }
+  await upsertSnapshots(snapshots);
+  console.log(`  ${company.name}: +${collected} prise(s) de parole historiques, ${snapshots.length} jour(s) reconstitué(s).`);
+  return snapshots.length;
+}
+
+async function runBackfill(sinceStr) {
+  const sinceDate = new Date(sinceStr + 'T00:00:00Z');
+  if (isNaN(sinceDate)) throw new Error(`Date invalide : « ${sinceStr} » (format attendu : YYYY-MM-DD)`);
+  const untilDate = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
+  if (sinceDate >= untilDate) throw new Error('La date de départ doit être dans le passé.');
+
+  const companies = await fetchActiveCompanies();
+  const windows = monthWindows(sinceDate, untilDate).length;
+  console.log(
+    `Reconstruction depuis le ${sinceStr} pour ${companies.length} entreprise(s) ` +
+    `(${windows} fenêtre(s) mensuelle(s) — comptez ~${Math.round(companies.length * windows * 2 * REQUEST_DELAY_MS / 60000)} min).`
+  );
+
+  let days = 0;
+  for (const company of companies) {
+    try { days += await backfillCompany(company, sinceDate, untilDate); }
+    catch (err) { console.error(`  ${company.name}: échec — ${err.message}`); }
+    await sleep(REQUEST_DELAY_MS);
+  }
+  console.log(`\nTerminé. ${days} point(s) d'indice reconstitué(s).`);
+}
+
+// ---------------------------------------------------------------------------
 // MAIN
 // ---------------------------------------------------------------------------
 async function main() {
   const missing = ['SUPABASE_URL', 'SUPABASE_SERVICE_KEY'].filter((k) => !process.env[k]);
   if (missing.length) throw new Error(`Variables d'environnement manquantes: ${missing.join(', ')}`);
+
+  // Mode reconstruction : `node pr-scanner.mjs --since 2026-03-01`
+  const sinceArg = process.argv.find((a) => a.startsWith('--since'));
+  if (sinceArg) {
+    const value = sinceArg.includes('=')
+      ? sinceArg.split('=')[1]
+      : process.argv[process.argv.indexOf(sinceArg) + 1];
+    return runBackfill(value);
+  }
 
   const companies = await fetchActiveCompanies();
   if (!companies.length) {
@@ -534,4 +658,4 @@ async function main() {
 const isEntrypoint = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href;
 if (isEntrypoint) main().catch((err) => { console.error(err); process.exit(1); });
 
-export { detectInterview, sourceTier, detectFormat, detectRole, computeIndex, parseRss, normalize };
+export { detectInterview, sourceTier, detectFormat, detectRole, computeIndex, parseRss, normalize, monthWindows };

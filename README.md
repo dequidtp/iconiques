@@ -118,6 +118,18 @@ score = Σ  base × poids_média × poids_format × récence
 
 Le score **part de 0** (dirigeants discrets) et **monte** quand ils s'expriment beaucoup dans de bons médias. Chaque run écrit **un point par entreprise et par jour** dans `pr_index_snapshots` (avec `interview_count`, `tier1_count`, `podcast_count`, `people_count`, `top_people`) — c'est cet historique que le dashboard trace.
 
+### Reconstruire l'historique (courbes antérieures au premier run)
+
+Le score d'un jour passé est **recalculable** : chaque prise de parole est stockée avec sa date de publication, et le score du jour J n'est que la somme de celles publiées dans les 90 j précédant J, pondérées par leur récence *mesurée à cette date*. Inutile donc d'attendre des mois pour avoir des courbes.
+
+```bash
+npm run pr:backfill 2026-03-01     # ou : node pr-scanner.mjs --since 2026-03-01
+```
+
+Le scanner interroge Google News par **fenêtres mensuelles** (opérateurs `after:` / `before:`, qui lèvent la limite des 90 jours), complète `pr_interviews`, puis réécrit **un snapshot par jour** depuis la date demandée. Comptez ~5 min par mois d'historique pour 40 entreprises (cadence anti-throttling).
+
+> ⚠️ **C'est une reconstruction, pas un enregistrement.** Elle montre le score qu'on *aurait* mesuré avec ce que Google News indexe **aujourd'hui** : les articles dépubliés ou désindexés depuis n'y figurent pas, et la couverture se dégrade à mesure qu'on remonte le temps (les courbes anciennes sont donc plutôt sous-estimées). Ces points sont marqués `backfilled = true` dans `pr_index_snapshots`, pour rester distinguables des mesures faites le jour même.
+
 ### Qui est repéré, et comment
 
 - Le **PDG** de chaque société (colonne `ceo_name` / `ceo_aliases`) est reconnu par son nom dans le titre.
