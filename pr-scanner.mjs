@@ -41,12 +41,27 @@ const TIER1_SOURCES = [
   'bloomberg', 'reuters', 'challenges', 'la tribune', 'le figaro',
 ];
 
-// Marqueurs de prise de parole d'un dirigeant dans un titre (FR + EN).
-const INTERVIEW_MARKERS = [
+// Marqueurs FORTS : le titre annonce explicitement une interview / un podcast.
+// Suffisants pour n'importe quel dirigeant (PDG ou membre du COMEX détecté).
+const STRONG_MARKERS = [
   'interview', 'entretien', 'grand entretien', 'podcast', 'confidences',
-  'au micro', 'invite de', 'invitee de', 're.oit ', 'a coeur ouvert',
+  'au micro', 'invite de', 'invitee de', 'a coeur ouvert', 'propos recueillis',
   '3 questions', 'trois questions', 'face a face', 'itw',
 ];
+
+// Marqueurs SOUPLES : le dirigeant s'exprime sans que le mot « interview »
+// apparaisse (fréquent aux Échos / Le Figaro). N'acceptés QUE pour le PDG connu
+// (haute confiance que c'est bien lui qui parle), sinon trop de faux positifs.
+const SOFT_MARKERS = [
+  'fait le point', 'se confie', 'se livre', 'revient sur', 'repond',
+  'defend', 'raconte', 'temoigne', 'prend la parole', 'nous parle',
+  'livre sa vision', 'fait ses confidences', 'detaille', 's exprime', "s'exprime",
+];
+
+// Une citation entre guillemets dans le titre = presque toujours une prise de parole.
+function hasQuote(title) {
+  return /[«»“”]/.test(title) || /"[^"]{8,}"/.test(title);
+}
 
 // Fonctions / rôles de dirigeant repérés dans le titre → étiquette normalisée.
 const ROLE_MAP = [
@@ -163,27 +178,30 @@ function detectInterview(item, company) {
   const blob = `${title} ${item.description || ''}`;
   const nt = normalize(title);
 
-  // 1) marqueur d'interview / podcast dans le TITRE
-  const hasMarker = INTERVIEW_MARKERS.some((m) => nt.includes(normalize(m)));
-  if (!hasMarker) return null;
+  const strong = STRONG_MARKERS.some((m) => nt.includes(normalize(m)));
+  const soft = SOFT_MARKERS.some((m) => nt.includes(normalize(m)));
+  const quote = hasQuote(title);
 
   const tier = sourceTier(item.source);
   const format = detectFormat(blob);
   const ceoNames = ceoNamesOf(company);
-
-  // 2) identifier l'interviewé
   const ceoHit = ceoNames.find((n) => n && nt.includes(normalize(n)));
+
   let interviewee = null, role = null, isCeo = false;
 
   if (ceoHit) {
+    // PDG connu : marqueur fort OU souple OU citation entre guillemets.
+    // (sinon le PDG est juste cité dans un article, il ne s'exprime pas)
+    if (!(strong || soft || quote)) return null;
     interviewee = company.ceo_name;
     role = 'PDG';
     isCeo = true;
   } else {
-    // dirigeant non-PDG : exiger que l'entreprise soit citée + extraire un nom
+    // dirigeant non-PDG : marqueur FORT exigé (précision) + entreprise citée + nom extrait
+    if (!strong) return null;
     if (!companyMentioned(blob, company)) return null;
     interviewee = extractInterviewee(title, company) || extractInterviewee(item.description || '', company);
-    if (!interviewee) return null;      // pas de dirigeant identifiable → on ignore
+    if (!interviewee) return null;
     role = detectRole(blob) || 'Dirigeant';
   }
 
@@ -335,8 +353,12 @@ async function upsertSnapshot(companyId, metrics) {
 async function processCompany(company) {
   const baseName = company.news_query || company.name;
   const queries = [];
-  if (company.ceo_name) queries.push(`"${company.ceo_name}" (interview OR entretien OR podcast)`);
-  queries.push(`"${baseName}" (PDG OR "directeur général" OR dirigeant OR patron) (interview OR entretien OR podcast)`);
+  // PDG : requête LARGE sur son nom (on filtre ensuite localement les vraies
+  // prises de parole), pour ne pas rater les titres sans le mot « interview »
+  // (« … fait le point … », citations entre guillemets, etc.).
+  if (company.ceo_name) queries.push(`"${company.ceo_name}"`);
+  // Autres dirigeants : requête ciblée interview/podcast (précision).
+  queries.push(`"${baseName}" (PDG OR "directeur général" OR dirigeant OR patron) (interview OR entretien OR podcast OR "propos recueillis")`);
 
   const seen = new Set();
   const rows = [];
