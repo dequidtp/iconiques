@@ -47,14 +47,20 @@
   .chartcard{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 12px 8px;position:relative;}
   svg.chart{width:100%;height:auto;display:block;overflow:visible;}
   .chart-note{font-size:12px;color:var(--muted);text-align:center;padding:40px 0;}
-  .tooltip{position:absolute;pointer-events:none;background:var(--ink);color:#fff;font-size:12px;padding:8px 10px;border-radius:6px;opacity:0;transition:opacity .08s;white-space:nowrap;z-index:5;box-shadow:0 4px 14px rgba(0,0,0,.2);}
+  /* Panneau FIXE dans le coin du graphique (et non collé au curseur) : c'est ce
+     qui permet d'y cliquer — une infobulle qui suit la souris est inatteignable. */
+  .tooltip{position:absolute;top:14px;right:14px;max-width:300px;pointer-events:auto;background:var(--ink);color:#fff;font-size:12px;padding:9px 11px;border-radius:6px;opacity:0;transition:opacity .08s;z-index:5;box-shadow:0 4px 14px rgba(0,0,0,.22);}
   .tooltip .tt-date{color:#b9beca;font-size:10px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
   .tooltip .tt-row{display:flex;justify-content:space-between;gap:14px;}
   .tooltip .tt-row .sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;}
   .tooltip .tt-hint{color:#b9beca;font-size:10px;margin-top:5px;padding-top:4px;border-top:1px solid rgba(255,255,255,.15);}
   .tooltip .tt-sep{color:#b9beca;font-size:9.5px;text-transform:uppercase;letter-spacing:.6px;margin-top:6px;padding-top:5px;border-top:1px solid rgba(255,255,255,.15);}
-  .tooltip .tt-top{color:#d9dce4;font-size:11px;}
   .tooltip .tt-rank{color:#b9beca;font-size:10px;}
+  .tooltip .tt-iv{margin-top:4px;font-size:11.5px;line-height:1.4;white-space:normal;}
+  .tooltip .tt-iv a{color:#fff;text-decoration:underline;text-underline-offset:2px;}
+  .tooltip .tt-iv a:hover{color:var(--brand);}
+  .tooltip .tt-iv .meta{color:#b9beca;font-size:10px;display:block;margin-top:2px;}
+  .tooltip .tt-row{white-space:nowrap;}
 
   .legend{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px;max-height:132px;overflow-y:auto;padding:2px;}
   .chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);background:var(--surface);border-radius:20px;padding:5px 11px 5px 8px;font-size:12px;cursor:pointer;color:var(--ink-2);user-select:none;}
@@ -309,7 +315,6 @@ function renderChart(){
 function wireHover(ctx){
   const svg = $('chart').querySelector('svg'), cross = $('crosshair'), tip = $('tooltip');
   const catcher = $('hovercatch'), layer = $('hoverlayer');
-  const card = $('chart').closest('.chartcard');
   const { dates, xAt, yAt, W, H, linePath, toPath } = ctx;
   let hoveredId = null;   // entreprise sous le curseur (cliquable pour l'épingler)
 
@@ -364,29 +369,34 @@ function wireHover(ctx){
       const v = valueAt(id, dates[best]);
       if (v != null) rows.push(`<div class="tt-row"><span><span class="sw" style="background:${color}"></span>${esc(state.data.coById[id].name)}</span><b>${fmt(v,1)}</b></div>`);
     }
-    if (ranked.length){
-      rows.push(`<div class="tt-sep">Top à cette date</div>`);
-      ranked.slice(0, 3).forEach((r, i) => {
-        rows.push(`<div class="tt-row tt-top"><span>${i+1}. ${esc(r.c.name)}</span><b>${fmt(r.v,1)}</b></div>`);
-      });
+    // dernière prise de parole de l'entreprise survolée, cliquable
+    if (hoveredId){
+      const ivs = state.data.ivsByCo[hoveredId] || [];
+      const last = ivs[0]; // déjà triées par date décroissante au chargement
+      if (last){
+        rows.push(`<div class="tt-sep">Dernière prise de parole</div>`);
+        rows.push(`<div class="tt-iv"><a href="${esc(last.url)}" target="_blank" rel="noopener">${esc(last.title)}</a>
+          <span class="meta">${esc(last.interviewee_name || '')}${last.interviewee_role ? ' · ' + esc(last.interviewee_role) : ''} — ${esc(last.source || '')}${last.published_at ? ' · ' + last.published_at.slice(0,10) : ''}${last.format ? ' · ' + esc(last.format) : ''}</span></div>`);
+      } else {
+        rows.push(`<div class="tt-sep">Dernière prise de parole</div>`);
+        rows.push(`<div class="tt-iv meta">Aucune prise de parole captée.</div>`);
+      }
+      rows.push(`<div class="tt-hint">clic sur la courbe pour l'épingler</div>`);
     }
-    if (hoveredId) rows.push(`<div class="tt-hint">clic pour épingler</div>`);
 
+    // Le panneau est fixe (coin haut-droit) : pas de calcul de position, et il
+    // reste atteignable à la souris pour cliquer le lien.
     tip.innerHTML = `<div class="tt-date">${dates[best]}</div>${rows.join('')}`;
     tip.style.opacity = '1';
-    const cr = card.getBoundingClientRect();
-    let left = (gx / W) * rect.width + (rect.left - cr.left) + 14;
-    if (left > cr.width - 200) left -= 220;
-    tip.style.left = left + 'px'; tip.style.top = '20px';
   });
 
   // clic = épingle l'entreprise survolée (couleur permanente + étiquette)
   catcher.addEventListener('click', () => { if (hoveredId) toggleHighlight(hoveredId); });
 
-  catcher.addEventListener('mouseleave', () => {
-    tip.style.opacity = '0'; cross.setAttribute('opacity', '0');
-    layer.innerHTML = ''; hoveredId = null;
-  });
+  // On NE masque PAS le panneau en quittant le graphique : sinon le lien vers la
+  // dernière prise de parole disparaîtrait avant qu'on puisse l'atteindre.
+  // Seul le curseur de lecture (crosshair) s'efface.
+  catcher.addEventListener('mouseleave', () => { cross.setAttribute('opacity', '0'); });
 }
 
 function renderLegend(){
