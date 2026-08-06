@@ -122,6 +122,9 @@ Le score **part de 0** (dirigeants discrets) et **monte** quand ils s'expriment 
 
 Le score d'un jour passé est **recalculable** : chaque prise de parole est stockée avec sa date de publication, et le score du jour J n'est que la somme de celles publiées dans les 90 j précédant J, pondérées par leur récence *mesurée à cette date*. Inutile donc d'attendre des mois pour avoir des courbes.
 
+**Depuis GitHub** (le plus simple) : onglet **Actions** → workflow **« Reconstruire l'historique (Indice RP) »** → **Run workflow** → saisis la date de départ (`2026-03-01`) → lance.
+
+**En local** :
 ```bash
 npm run pr:backfill 2026-03-01     # ou : node pr-scanner.mjs --since 2026-03-01
 ```

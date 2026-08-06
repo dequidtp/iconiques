@@ -1,0 +1,38 @@
+name: Reconstruire l'historique (Indice RP)
+
+# Lancement MANUEL uniquement (bouton « Run workflow » dans l'onglet Actions).
+# Recalcule un point d'indice par jour depuis la date choisie, en allant chercher
+# les prises de parole plus anciennes que la fenêtre courante de 90 jours.
+#
+# ⚠️ C'est une reconstruction : elle reflète ce que Google News indexe AUJOURD'HUI.
+# Les points écrits sont marqués `backfilled = true` dans pr_index_snapshots.
+on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "Reconstruire depuis cette date (format AAAA-MM-JJ, ex. 2026-03-01)"
+        required: true
+        default: '2026-03-01'
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    # Une reconstruction est longue : ~5 min par mois d'historique pour 40
+    # entreprises (cadence volontairement lente pour ne pas se faire throttler).
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # La date passe par une variable d'environnement plutôt que d'être
+      # interpolée dans la commande : une saisie interpolée directement dans un
+      # `run:` permettrait une injection de commande shell.
+      - name: Reconstruire l'historique
+        run: node pr-scanner.mjs --since "$SINCE"
+        env:
+          SINCE: ${{ inputs.since }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
