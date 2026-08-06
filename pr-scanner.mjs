@@ -62,9 +62,37 @@ const SOFT_MARKERS = [
   'livre sa vision', 'fait ses confidences', 'detaille', 's exprime', "s'exprime",
 ];
 
-// Une citation entre guillemets dans le titre = presque toujours une prise de parole.
-function hasQuote(title) {
-  return /[«»“”]/.test(title) || /"[^"]{8,}"/.test(title);
+// Contextes qui ressemblent à une prise de parole mais n'en sont PAS une :
+// posts sur les réseaux sociaux, communiqués, AG, notes d'analystes... Un titre
+// qui contient l'un de ces marqueurs est rejeté, même s'il cite le dirigeant.
+// (Cas typique : les articles sur les publications X de Bernard Arnault.)
+const EXCLUSION_MARKERS = [
+  'sur x', 'sur twitter', 'tweet', 'twitte', 'poste sur', 'publie sur',
+  'reseaux sociaux', 'reseau social', 'linkedin', 'instagram', 'facebook',
+  'tiktok', 'story', 'message poste', 'publication sur',
+  'communique', 'assemblee generale', 'note aux analystes', 'lettre aux actionnaires',
+];
+
+// Titre d'interview canonique : « <Nom du dirigeant> : "…" » — le nom, suivi
+// d'un deux-points (ou tiret), puis d'une citation ouvrante. C'est le format
+// standard des Échos / du Figaro pour un entretien.
+// Une citation entre guillemets N'IMPORTE OÙ dans le titre ne suffit pas : un
+// article qui cite le PDG (post X, discours, communiqué) n'est pas une interview.
+function hasInterviewQuote(title, names) {
+  for (const n of names) {
+    if (!n) continue;
+    const idx = normalize(title).indexOf(normalize(n));
+    if (idx === -1) continue;
+    // ce qui suit immédiatement le nom : séparateur puis guillemet ouvrant
+    const after = title.slice(idx + n.length, idx + n.length + 12);
+    if (/^\s*[:–—-]\s*["«“]/.test(after)) return true;
+  }
+  return false;
+}
+
+function isExcluded(text) {
+  const t = normalize(text);
+  return EXCLUSION_MARKERS.some((m) => t.includes(normalize(m)));
 }
 
 // Fonctions / rôles de dirigeant repérés dans le titre → étiquette normalisée.
@@ -182,9 +210,12 @@ function detectInterview(item, company) {
   const blob = `${title} ${item.description || ''}`;
   const nt = normalize(title);
 
+  // Post sur les réseaux, communiqué, AG... : ce n'est pas une prise de parole
+  // journalistique, on rejette avant tout le reste.
+  if (isExcluded(title)) return null;
+
   const strong = STRONG_MARKERS.some((m) => nt.includes(normalize(m)));
   const soft = SOFT_MARKERS.some((m) => nt.includes(normalize(m)));
-  const quote = hasQuote(title);
 
   const tier = sourceTier(item.source);
   const format = detectFormat(blob);
@@ -194,8 +225,10 @@ function detectInterview(item, company) {
   let interviewee = null, role = null, isCeo = false;
 
   if (ceoHit) {
-    // PDG connu : marqueur fort OU souple OU citation entre guillemets.
-    // (sinon le PDG est juste cité dans un article, il ne s'exprime pas)
+    // PDG connu : marqueur fort, marqueur souple, ou titre d'interview canonique
+    // « Nom : "…" ». Une citation ailleurs dans le titre ne suffit PAS — sinon
+    // tout article citant le PDG (post X, discours) passerait pour une interview.
+    const quote = hasInterviewQuote(title, ceoNames);
     if (!(strong || soft || quote)) return null;
     interviewee = company.ceo_name;
     role = 'PDG';
