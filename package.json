@@ -6,7 +6,8 @@
   "description": "Veille Reddit + enrichissement métadonnées pour la bibliothèque de photos iconiques",
   "scripts": {
     "scan": "node reddit-scanner.mjs",
-    "pr": "node --env-file=.env pr-scanner.mjs"
+    "pr": "node --env-file=.env pr-scanner.mjs",
+    "pr:backfill": "node --env-file=.env pr-scanner.mjs --since"
   },
   "dependencies": {
     "exifr": "^7.1.3"

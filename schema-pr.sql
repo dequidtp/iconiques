@@ -166,6 +166,9 @@ alter table pr_index_snapshots add column if not exists tier1_count int not null
 alter table pr_index_snapshots add column if not exists podcast_count int not null default 0;
 -- posts du dirigeant sur X/LinkedIn/Instagram (prise de parole directe, poids moindre)
 alter table pr_index_snapshots add column if not exists social_count int not null default 0;
+-- true = point reconstitué a posteriori (voir `node pr-scanner.mjs --since ...`),
+-- et non mesuré le jour même.
+alter table pr_index_snapshots add column if not exists backfilled boolean not null default false;
 alter table pr_index_snapshots add column if not exists people_count int not null default 0;
 alter table pr_index_snapshots add column if not exists top_people jsonb;
 
