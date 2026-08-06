@@ -164,6 +164,8 @@ create table if not exists pr_interviews (
 alter table pr_index_snapshots add column if not exists interview_count int not null default 0;
 alter table pr_index_snapshots add column if not exists tier1_count int not null default 0;
 alter table pr_index_snapshots add column if not exists podcast_count int not null default 0;
+-- posts du dirigeant sur X/LinkedIn/Instagram (prise de parole directe, poids moindre)
+alter table pr_index_snapshots add column if not exists social_count int not null default 0;
 alter table pr_index_snapshots add column if not exists people_count int not null default 0;
 alter table pr_index_snapshots add column if not exists top_people jsonb;
 

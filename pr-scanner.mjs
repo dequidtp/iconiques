@@ -32,6 +32,9 @@ const OTHER_WEIGHT = 1.0;       // autre média
 const PODCAST_WEIGHT = 1.4;     // format podcast
 const LONGFORM_WEIGHT = 1.3;    // "grand entretien"
 const STD_WEIGHT = 1.0;         // interview / entretien standard
+// Post du dirigeant sur X/LinkedIn/Instagram : vraie prise de parole, mais
+// auto-publiée (pas de média qui la sollicite ni ne la filtre) → pèse moins.
+const SOCIAL_WEIGHT = 0.6;
 const RECENCY_FLOOR = 0.25;     // une vieille interview compte encore un peu
 // Google News throttle vite depuis une IP partagée (runner GitHub Actions).
 // Cadence prudente + réessais : mieux vaut un run lent qu'un run vide.
@@ -62,15 +65,21 @@ const SOFT_MARKERS = [
   'livre sa vision', 'fait ses confidences', 'detaille', 's exprime', "s'exprime",
 ];
 
-// Contextes qui ressemblent à une prise de parole mais n'en sont PAS une :
-// posts sur les réseaux sociaux, communiqués, AG, notes d'analystes... Un titre
-// qui contient l'un de ces marqueurs est rejeté, même s'il cite le dirigeant.
-// (Cas typique : les articles sur les publications X de Bernard Arnault.)
-const EXCLUSION_MARKERS = [
+// Prise de parole DIRECTE du dirigeant sur les réseaux sociaux. Un post long
+// d'un PDG fait aujourd'hui office de tribune : ça compte comme une prise de
+// parole — mais dans une catégorie distincte, moins valorisée qu'un entretien
+// accordé à un média (voir SOCIAL_WEIGHT).
+const SOCIAL_MARKERS = [
   'sur x', 'sur twitter', 'tweet', 'twitte', 'poste sur', 'publie sur',
   'reseaux sociaux', 'reseau social', 'linkedin', 'instagram', 'facebook',
-  'tiktok', 'story', 'message poste', 'publication sur',
-  'communique', 'assemblee generale', 'note aux analystes', 'lettre aux actionnaires',
+  'tiktok', 'publication sur', 'message poste', 'story',
+];
+
+// Ce qui n'est PAS une parole personnelle du dirigeant : documents corporate
+// émis par l'entreprise. Rejeté même si le dirigeant y est cité.
+const EXCLUSION_MARKERS = [
+  'communique de presse', 'communique', 'note aux analystes',
+  'lettre aux actionnaires', 'resultats annuels', 'resultats trimestriels',
 ];
 
 // Titre d'interview canonique : « <Nom du dirigeant> : "…" » — le nom, suivi
@@ -168,10 +177,12 @@ function sourceTier(source) {
   return TIER1_SOURCES.some((t) => s.includes(t)) ? 1 : 2;
 }
 
-function detectFormat(text) {
+// isSocial l'emporte : un post relayé par la presse reste un post.
+function detectFormat(text, isSocial = false) {
   const t = normalize(text);
   if (t.includes('podcast') || t.includes('au micro')) return 'podcast';
   if (t.includes('grand entretien')) return 'grand entretien';
+  if (isSocial) return 'reseau social';
   if (t.includes('entretien')) return 'entretien';
   return 'interview';
 }
@@ -179,6 +190,7 @@ function detectFormat(text) {
 function formatWeight(format) {
   if (format === 'podcast') return PODCAST_WEIGHT;
   if (format === 'grand entretien') return LONGFORM_WEIGHT;
+  if (format === 'reseau social') return SOCIAL_WEIGHT;
   return STD_WEIGHT;
 }
 
@@ -210,26 +222,27 @@ function detectInterview(item, company) {
   const blob = `${title} ${item.description || ''}`;
   const nt = normalize(title);
 
-  // Post sur les réseaux, communiqué, AG... : ce n'est pas une prise de parole
-  // journalistique, on rejette avant tout le reste.
+  // Document corporate (communiqué, résultats...) : pas une parole personnelle.
   if (isExcluded(title)) return null;
 
   const strong = STRONG_MARKERS.some((m) => nt.includes(normalize(m)));
   const soft = SOFT_MARKERS.some((m) => nt.includes(normalize(m)));
+  const social = SOCIAL_MARKERS.some((m) => nt.includes(normalize(m)));
 
   const tier = sourceTier(item.source);
-  const format = detectFormat(blob);
+  const format = detectFormat(blob, social);
   const ceoNames = ceoNamesOf(company);
   const ceoHit = ceoNames.find((n) => n && nt.includes(normalize(n)));
 
   let interviewee = null, role = null, isCeo = false;
 
   if (ceoHit) {
-    // PDG connu : marqueur fort, marqueur souple, ou titre d'interview canonique
-    // « Nom : "…" ». Une citation ailleurs dans le titre ne suffit PAS — sinon
-    // tout article citant le PDG (post X, discours) passerait pour une interview.
+    // PDG connu : marqueur fort, marqueur souple, post sur les réseaux, ou titre
+    // d'interview canonique « Nom : "…" ». Une citation ailleurs dans le titre ne
+    // suffit pas (sinon un simple article citant le PDG passerait pour une prise
+    // de parole).
     const quote = hasInterviewQuote(title, ceoNames);
-    if (!(strong || soft || quote)) return null;
+    if (!(strong || soft || social || quote)) return null;
     interviewee = company.ceo_name;
     role = 'PDG';
     isCeo = true;
@@ -374,7 +387,7 @@ function recency(ageDays) {
 }
 
 function computeIndex(interviews, now = Date.now()) {
-  let score = 0, tier1 = 0, podcast = 0;
+  let score = 0, tier1 = 0, podcast = 0, social = 0;
   const people = new Map();
 
   for (const iv of interviews) {
@@ -382,6 +395,7 @@ function computeIndex(interviews, now = Date.now()) {
     score += (iv.weight || POINTS_BASE) * recency(age);
     if (iv.source_tier === 1) tier1++;
     if (iv.format === 'podcast') podcast++;
+    if (iv.format === 'reseau social') social++;
     if (iv.interviewee_name) {
       const key = iv.interviewee_name;
       const p = people.get(key) || { name: key, role: iv.interviewee_role, count: 0 };
@@ -396,6 +410,7 @@ function computeIndex(interviews, now = Date.now()) {
     interview_count: interviews.length,
     tier1_count: tier1,
     podcast_count: podcast,
+    social_count: social,
     people_count: people.size,
     top_people: topPeople,
     components: { formula: 'Σ base×média×format×récence', base: POINTS_BASE, window_days: WINDOW_DAYS },

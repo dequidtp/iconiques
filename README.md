@@ -113,7 +113,7 @@ score = Σ  base × poids_média × poids_format × récence
 
 - **base** = 10 points par prise de parole (`POINTS_BASE`) ;
 - **poids_média** : média cible (`TIER1_SOURCES` : Investir, Les Échos, Financial Times, Le Monde, Bloomberg, Reuters, Challenges, La Tribune, Le Figaro) = **×1,5** ; autre média = ×1 ;
-- **poids_format** : podcast = **×1,4**, grand entretien = **×1,3**, interview/entretien standard = ×1 ;
+- **poids_format** : podcast = **×1,4**, grand entretien = **×1,3**, interview/entretien standard = ×1, **post du dirigeant sur X/LinkedIn/Instagram = ×0,6** ;
 - **récence** : décroît linéairement sur la fenêtre (une prise de parole d'hier pèse plus qu'une d'il y a 3 mois), avec un plancher à 0,25.
 
 Le score **part de 0** (dirigeants discrets) et **monte** quand ils s'expriment beaucoup dans de bons médias. Chaque run écrit **un point par entreprise et par jour** dans `pr_index_snapshots` (avec `interview_count`, `tier1_count`, `podcast_count`, `people_count`, `top_people`) — c'est cet historique que le dashboard trace.
@@ -137,7 +137,8 @@ Le score **part de 0** (dirigeants discrets) et **monte** quand ils s'expriment 
 ## Limites connues
 
 - **Détection de nom heuristique** : les dirigeants non-PDG sont extraits des titres/résumés Google News. C'est robuste sur les formulations classiques (« Interview de Prénom Nom, directeur… ») mais peut rater un titre atypique ou attribuer un mauvais nom. Le PDG (nom connu) est le plus fiable.
-- **Citer un dirigeant ≠ l'interviewer** : un article qui reprend une déclaration (post X/LinkedIn, communiqué, assemblée générale, discours) n'est pas une prise de parole journalistique. Deux garde-fous : une liste d'exclusions (`EXCLUSION_MARKERS` — réseaux sociaux, communiqué, AG…) et, pour les citations, l'exigence du **format canonique d'un titre d'entretien** `Nom : « … »` — une citation ailleurs dans le titre ne suffit pas. Ajuste `EXCLUSION_MARKERS` si de nouveaux faux positifs apparaissent.
+- **Posts sur les réseaux : comptés, mais à part** — un post long d'un dirigeant sur X/LinkedIn fait aujourd'hui office de tribune, donc il compte comme prise de parole (`SOCIAL_MARKERS` → format `reseau social`). Mais comme il est auto-publié — aucun média ne l'a sollicité ni filtré — il pèse **×0,6** contre ×1 à ×1,4 pour un entretien accordé à un média. Le dashboard l'affiche avec son propre compteur et un badge « post réseau », pour que les deux ne soient jamais confondus. Ajuste `SOCIAL_WEIGHT` selon l'importance que tu veux leur donner.
+- **Citer un dirigeant ≠ le faire parler** : un article qui mentionne simplement le PDG (« salué par les analystes ») n'est pas une prise de parole. Garde-fous : `EXCLUSION_MARKERS` (documents corporate — communiqués, résultats, notes aux analystes) et, pour les citations, l'exigence du **format canonique d'un titre d'entretien** `Nom : « … »` — une citation ailleurs dans le titre ne suffit pas.
 - **Pourquoi pas LinkedIn** : suivre les pages LinkedIn des entreprises n'est pas une option viable. L'API LinkedIn ne donne accès aux publications que des pages **que l'on administre** (accès partenaire requis), et le scraping des pages publiques viole les CGU tout en étant activement bloqué. Google News reste la source gratuite la plus solide pour de la veille tierce.
 - **Podcasts partiellement couverts** : pas d'API gratuite propre (Apple/Spotify). On capte les épisodes et reprises indexés par Google News via les mots-clés `podcast/interview/entretien` — la couverture podcast est donc incomplète.
 - **« Longueur » de l'interview non vérifiable** depuis le flux (titre seul, médias souvent en paywall). Le format (podcast / grand entretien / interview) est déduit du titre, pas mesuré.
